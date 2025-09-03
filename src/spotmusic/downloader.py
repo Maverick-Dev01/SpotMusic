@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 from yt_dlp import YoutubeDL
+from time import sleep
+
 
 def find_ytmusic_url(query: str) -> Optional[str]:
     """
@@ -37,3 +39,22 @@ def download_audio(src: str, out_dir: Path, audio_format: str = "mp3") -> None:
 
     with YoutubeDL(opts) as ydl:
         ydl.download([src])
+
+def download_batch(queries: list[str], out_dir: Path, audio_format: str = "mp3") -> None:
+    """
+    Descarga una lista de consultas (Artista - Título).
+    Busca en YT cada una y descarga en out_dir.
+    """
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for i, q in enumerate(queries, 1):
+        print(f"[{i}/{len(queries)}] Buscando:", q)
+        url = find_ytmusic_url(q)
+        if not url:
+            print("  ⚠️  No encontrado en YouTube Music")
+            continue
+        try:
+            download_audio(url, out_dir, audio_format=audio_format)
+        except Exception as e:
+            print("  ❌ Error descargando:", e)
+            # pausa pequeña por si hay rate limit
+            sleep(1.0)
