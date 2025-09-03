@@ -1,5 +1,5 @@
 from rich.console import Console
-from rich.prompt import IntPrompt, Confirm
+from rich.prompt import IntPrompt, Confirm, Prompt
 from pathlib import Path
 from . import __app_name__, __version__
 from .spotify import obtener_canciones
@@ -25,10 +25,18 @@ def main():
         n = IntPrompt.ask("¿Cuántas (primeras N)?", default=min(3, len(canciones)))
         a_descargar = canciones[:max(0, min(n, len(canciones)))]
 
-    out_dir = Path("downloads")
-    console.print(f"Descargando en: [cyan]{out_dir.resolve()}[/cyan]")
-    download_batch(a_descargar, out_dir, audio_format="mp3")
+    # Carpeta de salida (por defecto ./downloads)
+    out_str = Prompt.ask("Carpeta de salida", default="downloads")
+    out_dir = Path(out_str).expanduser().resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Formato de audio
+    formato = Prompt.ask("Formato [mp3/m4a/opus]", choices=["mp3", "m4a", "opus"], default="mp3")
+
+    console.print(f"Descargando en: [cyan]{out_dir}[/cyan] como: [cyan]{formato}[/cyan]")
+    download_batch(a_descargar, out_dir, audio_format=formato)
     console.print("[bold green]Listo.[/bold green]")
+
 
 if __name__ == "__main__":
     main()
