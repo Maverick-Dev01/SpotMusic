@@ -41,6 +41,19 @@ class App(ttk.Window):
         ttk.Entry(ff, textvariable=self.dir_var).pack(side="left", fill="x", expand=True)
         ttk.Button(ff, text="📁 Elegir carpeta", command=self.choose_dir).pack(side="left", padx=8)
 
+        # formato de salida
+        f_fmt = ttk.Frame(self);
+        f_fmt.pack(fill="x", padx=15, pady=(0, 8))
+        ttk.Label(f_fmt, text="Formato de salida", font=("Segoe UI", 10, "bold")).pack(side="left")
+        self.format_var = ttk.StringVar(value="mp3")
+        ttk.Combobox(
+            f_fmt,
+            textvariable=self.format_var,
+            values=("mp3", "m4a", "opus"),
+            state="readonly",
+            width=8
+        ).pack(side="left", padx=10)
+
         # scrollable list
         wrap = ttk.Frame(self); wrap.pack(fill="both", expand=False, padx=15, pady=(4, 0))
         self.canvas = Canvas(wrap, bg="#1a1a1a", height=320, highlightthickness=0)
@@ -162,7 +175,7 @@ class App(ttk.Window):
                     self.after(0, lambda v=i: self.pb.configure(value=v))
                     continue
                 try:
-                    download_audio(url, out_dir, audio_format="mp3")
+                    download_audio(url, out_dir, audio_format=self.format_var.get())
                     ok += 1
                 except Exception as e:
                     self.set_status(f"❌ Error descargando: {e}", "red")
