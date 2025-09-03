@@ -1,2 +1,4 @@
-rich
-python-dotenv
+rich~=14.1.0
+python-dotenv~=1.1.1
+
+spotipy~=2.25.1
