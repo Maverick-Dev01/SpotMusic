@@ -30,27 +30,25 @@ def find_ytmusic_url(query: str) -> Optional[str]:
         return info["entries"][0]["webpage_url"]
 
 def _build_opts(out_dir: Path, audio_format: str) -> dict:
+    """
+    Optimizado para velocidad:
+    - m4a/opus: descarga el stream ya en ese códec y evita recodificar (SIN postprocesos pesados).
+    - mp3: solo cuando se pide; requiere recodificar (más lento).
+    - Usa aria2c si está disponible para acelerar la descarga de fragmentos.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if audio_format.lower() == "m4a":
+    af = audio_format.lower()
+    if af == "m4a":
         ytdlp_format = "bestaudio[ext=m4a]/bestaudio/best"
-        postprocessors: List[dict] = [
-            {"key": "FFmpegMetadata"},
-            {"key": "EmbedThumbnail"},
-        ]
-    elif audio_format.lower() == "opus":
+        postprocessors: List[dict] = []
+    elif af == "opus":
         ytdlp_format = "bestaudio[acodec=opus]/bestaudio/best"
-        postprocessors = [
-            {"key": "FFmpegExtractAudio", "preferredcodec": "opus", "preferredquality": "0"},
-            {"key": "FFmpegMetadata"},
-            {"key": "EmbedThumbnail"},
-        ]
+        postprocessors = []
     else:  # mp3
         ytdlp_format = "bestaudio/best"
         postprocessors = [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "0"},
-            {"key": "FFmpegMetadata"},
-            {"key": "EmbedThumbnail"},
         ]
 
     opts: dict = {
@@ -62,9 +60,9 @@ def _build_opts(out_dir: Path, audio_format: str) -> dict:
         "format": ytdlp_format,
         "retries": 5,
         "fragment_retries": 5,
-        "concurrent_fragment_downloads": 10,
+        "concurrent_fragment_downloads": 16,  # ↑ de 12 a 16
         "postprocessors": postprocessors,
-        "overwrites": False,  # no sobrescribe si ya existe
+        "overwrites": False,
     }
 
     ffmpeg = _ffmpeg_guess()
@@ -79,6 +77,8 @@ def _build_opts(out_dir: Path, audio_format: str) -> dict:
         }
 
     return opts
+
+
 
 def download_audio(src: str, out_dir: Path, audio_format: str = "mp3") -> None:
     opts = _build_opts(out_dir, audio_format)
