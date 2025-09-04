@@ -5,6 +5,8 @@ from pathlib import Path
 from tkinter import BooleanVar, Canvas, Scrollbar, filedialog
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 
 from spotmusic.spotify import obtener_canciones
 from spotmusic.downloader import find_ytmusic_url, download_audio
@@ -46,7 +48,7 @@ class App(ttk.Window):
         f_fmt = ttk.Frame(self);
         f_fmt.pack(fill="x", padx=15, pady=(0, 8))
         ttk.Label(f_fmt, text="Formato de salida", font=("Segoe UI", 10, "bold")).pack(side="left")
-        self.format_var = ttk.StringVar(value="mp3")
+        self.format_var = ttk.StringVar(value="m4a")
         ttk.Combobox(
             f_fmt,
             textvariable=self.format_var,
@@ -175,39 +177,57 @@ class App(ttk.Window):
     def download_selected(self):
         selected = [chk.cancion for chk in self.checks if chk.var.get()]
         if not selected:
-            self.set_status("⚠️ No seleccionaste ninguna canción.", "orange"); return
+            self.set_status("⚠️ No seleccionaste ninguna canción.", "orange");
+            return
+
         out_dir = Path(self.dir_var.get()).expanduser()
         out_dir.mkdir(parents=True, exist_ok=True)
+
         self.pb.configure(maximum=len(selected), value=0)
         self.cancel_flag = False
         self.btn_cancel.configure(state="normal")
         self.btn_download.configure(state="disabled")
-        self.set_status("Descargando…", "cyan")
+        self.set_status("Descargando en paralelo…", "cyan")
+
+        MAX_WORKERS = 5  # súbelo si tu red/PC lo aguantan (4–5 máx. recomendado)
+
+        def job(q: str):
+            if self.cancel_flag:
+                return False, q, "cancelado"
+            url = find_ytmusic_url(q)
+            if not url:
+                return False, q, "No encontrado en YouTube Music"
+            try:
+                download_audio(url, out_dir, audio_format=self.format_var.get())
+                return True, q, ""
+            except Exception as e:
+                return False, q, str(e)
 
         def worker():
             ok = 0
-            for i, q in enumerate(selected, 1):
-                if self.cancel_flag: break
-                url = find_ytmusic_url(q)
-                if not url:
-                    self.set_status(f"⚠️ No encontrado en YouTube Music: {q}", "orange")
-                    self.after(0, lambda v=i: self.pb.configure(value=v))
-                    continue
-                try:
-                    download_audio(url, out_dir, audio_format=self.format_var.get())
-                    ok += 1
-                except Exception as e:
-                    self.set_status(f"❌ Error descargando: {e}", "red")
-                finally:
-                    self.after(0, lambda v=i: self.pb.configure(value=v))
-            def done():
+            done = 0
+            with ThreadPoolExecutor(max_workers=MAX_WORKERS) as ex:
+                futures = [ex.submit(job, q) for q in selected]
+                for fut in as_completed(futures):
+                    success, q, err = fut.result()
+                    done += 1
+                    if success:
+                        ok += 1
+                    else:
+                        # muestra avisos sin detener todo
+                        msg = f"⚠️ {q}: {err}"
+                        self.after(0, lambda m=msg: self.set_status(m, "orange"))
+                    self.after(0, lambda v=done: self.pb.configure(value=v))
+
+            def finish():
                 self.btn_cancel.configure(state="disabled")
                 self.btn_download.configure(state="normal")
                 if self.cancel_flag:
                     self.set_status("Descarga cancelada por el usuario.", "orange")
                 else:
                     self.set_status(f"✅ Descarga terminada. Éxitos: {ok}/{len(selected)}", "lime")
-            self.after(0, done)
+
+            self.after(0, finish)
 
         threading.Thread(target=worker, daemon=True).start()
 
