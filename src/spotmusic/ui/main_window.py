@@ -13,8 +13,9 @@ class App(ttk.Window):
     def __init__(self):
         super().__init__(themename="darkly")
         self.title("SoundSnap")
-        self.geometry("820x700")
-        self.resizable(False, False)
+        self.geometry("1000x720")
+        self.minsize(860, 640)
+        self.resizable(True, True)
 
         # state
         self.url_var = ttk.StringVar()
@@ -54,17 +55,35 @@ class App(ttk.Window):
             width=8
         ).pack(side="left", padx=10)
 
-        # scrollable list
-        wrap = ttk.Frame(self); wrap.pack(fill="both", expand=False, padx=15, pady=(4, 0))
-        self.canvas = Canvas(wrap, bg="#1a1a1a", height=320, highlightthickness=0)
+        # scrollable list (responsive)
+        wrap = ttk.Frame(self)
+        wrap.pack(fill="both", expand=True, padx=15, pady=(4, 0))
+
+        self.canvas = Canvas(wrap, bg="#1a1a1a", highlightthickness=0)
         self.scroll_y = Scrollbar(wrap, orient="vertical", command=self.canvas.yview)
+
         self.list_frame = ttk.Frame(self.canvas)
-        self.list_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-        self.canvas.create_window((0, 0), window=self.list_frame, anchor="nw")
+        # ventana interna dentro del canvas (guardamos el id para ajustarle el ancho)
+        self._canvas_win = self.canvas.create_window((0, 0), window=self.list_frame, anchor="nw")
+
+        def _on_frame_config(_):
+            # Actualiza la región desplazable cuando cambie el contenido
+            self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+        self.list_frame.bind("<Configure>", _on_frame_config)
+
+        def _on_canvas_config(event):
+            # Hace que el contenido use todo el ancho disponible del canvas
+            self.canvas.itemconfig(self._canvas_win, width=event.width)
+
+        self.canvas.bind("<Configure>", _on_canvas_config)
+
         self.canvas.configure(yscrollcommand=self.scroll_y.set)
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scroll_y.pack(side="right", fill="y")
-        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1 * (e.delta/120)), "units"))
+
+        # Scroll con rueda del mouse
+        self.canvas.bind_all("<MouseWheel>", lambda e: self.canvas.yview_scroll(int(-1 * (e.delta / 120)), "units"))
 
         # counters + toggle
         fc = ttk.Frame(self); fc.pack(pady=6)
