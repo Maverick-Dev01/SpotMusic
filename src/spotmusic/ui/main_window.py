@@ -6,7 +6,8 @@ from tkinter import BooleanVar, Canvas, Scrollbar, filedialog
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import *
 
-from spotmusic.spotify import obtener_canciones
+from ..spotify import obtener_canciones, SpotifyPrivada, SpotifySinResultados, SpotifyURLInvalida
+
 from spotmusic.downloader import find_ytmusic_url, download_audio
 
 class App(ttk.Window):
@@ -106,7 +107,8 @@ class App(ttk.Window):
     def on_search(self):
         url = self.url_var.get().strip()
         if not url:
-            self.set_status("⚠️ Pega un enlace de Spotify", "orange"); return
+            self.set_status("⚠️ Pega un enlace de Spotify", "orange");
+            return
         self.btn_search.configure(state="disabled")
         self.set_status("Buscando canciones…", "cyan")
         self.clear_list()
@@ -114,19 +116,22 @@ class App(ttk.Window):
         def task():
             try:
                 songs = obtener_canciones(url)
+                err = None
+            except (SpotifyPrivada, SpotifySinResultados, SpotifyURLInvalida) as e:
+                songs, err = [], str(e)
             except Exception as e:
-                songs = []
-                self.set_status(f"❌ Error al obtener canciones: {e}", "red")
+                songs, err = [], f"Error inesperado: {e}"
 
             def build():
-                if not songs:
-                    self.lbl_total.configure(text="Total: 0 canciones")
+                if err:
+                    self.set_status(f"❌ {err}", "red")
                     self.btn_search.configure(state="normal")
                     return
                 for s in songs:
                     var = BooleanVar()
                     chk = ttk.Checkbutton(self.list_frame, text=s, variable=var, command=self.update_selected_count)
-                    chk.var = var; chk.cancion = s
+                    chk.var = var;
+                    chk.cancion = s
                     chk.pack(anchor="w", padx=10, pady=1)
                     self.checks.append(chk)
                 self.lbl_total.configure(text=f"Total: {len(songs)} canciones")
@@ -135,6 +140,7 @@ class App(ttk.Window):
                 self.btn_download.configure(state="normal")
                 self.btn_search.configure(state="normal")
                 self.set_status("Listo para descargar.", "lime")
+
             self.after(0, build)
 
         threading.Thread(target=task, daemon=True).start()
