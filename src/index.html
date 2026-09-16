@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SnapMusic - Spotify Playlist Downloader</title>
+  <link rel="stylesheet" href="styles/app.css">
+</head>
+<body>
+  <!-- Titlebar drag region for macOS -->
+  <div class="titlebar-drag"></div>
+
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 18V5l12-2v13"></path>
+            <circle cx="6" cy="18" r="3"></circle>
+            <circle cx="18" cy="16" r="3"></circle>
+          </svg>
+        </div>
+        <div>
+          <span class="brand-text">SnapMusic</span>
+          <span class="brand-badge">PRO</span>
+        </div>
+      </div>
+
+      <ul class="nav-menu">
+        <li class="nav-item active" id="nav-search" data-view="search-view">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <span>Explorador</span>
+        </li>
+        <li class="nav-item" id="nav-downloads" data-view="downloads-view">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Descargas</span>
+          <span class="nav-badge" id="badge-active-downloads">0</span>
+        </li>
+        <li class="nav-item" id="nav-license">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          <span>Licencia</span>
+          <span class="license-pill active" id="badge-license-pill" style="margin-left: auto;">Activa</span>
+        </li>
+        <li class="nav-item" id="nav-settings">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+          <span>Ajustes & API</span>
+        </li>
+      </ul>
+
+      <div class="sidebar-footer">
+        <div class="status-indicator">
+          <div class="status-dot online" id="status-engine-dot"></div>
+          <span id="status-engine-text">Motor yt-dlp listo</span>
+        </div>
+        <button class="btn-sidebar-folder" id="btn-open-dir" title="Abrir carpeta de música">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+          </svg>
+          <span>Abrir Carpeta</span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Search Bar -->
+      <header class="topbar">
+        <div class="search-box">
+          <svg class="search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input
+            type="text"
+            class="search-input"
+            id="input-playlist-url"
+            placeholder="Pega aquí el enlace de tu playlist (ej: https://open.spotify.com/playlist/...)"
+            autocomplete="off"
+          />
+          <button class="btn btn-secondary btn-sm" id="btn-paste-search" style="position: absolute; right: 8px; border-radius: 500px; padding: 5px 12px; font-size: 11px;" title="Pegar enlace del portapapeles">
+            Pegar
+          </button>
+
+          <!-- Floating Live Suggestions Dropdown -->
+          <div class="search-suggestions-dropdown" id="search-suggestions-dropdown" style="display: none;">
+            <div class="suggestions-header">
+              <span>Sugerencias en Vivo (Preescucha de 30s)</span>
+              <button class="btn-close-suggestions" id="btn-close-suggestions">✕</button>
+            </div>
+            <div class="suggestions-list" id="suggestions-list">
+              <!-- Dynamically populated -->
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-search-playlist">
+          <span id="search-btn-text">Buscar</span>
+          <svg id="search-spinner" class="spinner" style="display:none;" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+            <circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle>
+            <path d="M12 2a10 10 0 0 1 10 10" stroke="#000"></path>
+          </svg>
+        </button>
+      </header>
+
+      <!-- Quick Root Download Folder Bar -->
+      <div class="root-folder-bar">
+        <div class="root-folder-info">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+          <span style="color: var(--text-muted); font-size: 12px;">Carpeta raíz de descargas:</span>
+          <span class="root-folder-path" id="root-folder-path-display">~/Downloads/SnapMusic</span>
+        </div>
+        <div class="root-folder-actions">
+          <button class="btn btn-secondary btn-sm" id="btn-change-root-folder" style="font-size: 11px; padding: 4px 12px;">
+            Cambiar Carpeta...
+          </button>
+          <button class="btn btn-secondary btn-sm" id="btn-reveal-root-folder" style="font-size: 11px; padding: 4px 10px;" title="Abrir en Finder / Explorador">
+            Abrir
+          </button>
+        </div>
+      </div>
+
+      <!-- Views Container -->
+      <div class="views-container">
+        <!-- Search & Tracks View -->
+        <section class="view-section active" id="search-view">
+          <!-- Empty State -->
+          <div class="empty-state" id="empty-state-view">
+            <div class="empty-icon-wrap">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#1db954" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 18V5l12-2v13"></path>
+                <circle cx="6" cy="18" r="3"></circle>
+                <circle cx="18" cy="16" r="3"></circle>
+              </svg>
+            </div>
+            <h2>Descarga tus Playlists Favoritas</h2>
+            <p>Pega cualquier enlace de playlist de Spotify en la barra superior y pulsa <strong>Buscar</strong> para cargar el listado completo de canciones y descargarlas en alta calidad.</p>
+            
+            <div style="display: flex; gap: 12px; margin-bottom: 24px;">
+              <button class="btn btn-secondary btn-sm" id="btn-paste-empty">
+                📋 Pegar Enlace del Portapapeles
+              </button>
+              <button class="btn btn-primary btn-sm" id="btn-load-sample">
+                🔥 Probar con Playlist de Ejemplo (Today's Top Hits)
+              </button>
+            </div>
+
+            <div class="instructions-card">
+              <div class="instruction-step">
+                <div class="step-num">Paso 1</div>
+                <div class="step-title">Copia tu Playlist</div>
+                <div class="step-desc">En Spotify ve a tu playlist: pulsa (...) Compartir -> Copiar enlace.</div>
+              </div>
+              <div class="instruction-step">
+                <div class="step-num">Paso 2</div>
+                <div class="step-title">Pega y Busca</div>
+                <div class="step-desc">Pega el link arriba para ver todas las canciones y carátulas.</div>
+              </div>
+              <div class="instruction-step">
+                <div class="step-num">Paso 3</div>
+                <div class="step-title">Descarga por Lote</div>
+                <div class="step-desc">Elige MP3 320k o FLAC y descárgalas en paralelo.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Direct Catalog Search Results Container (Hidden until text search) -->
+          <div id="catalog-results-container" style="display: none; padding-top: 10px;">
+            <div class="search-tabs-header">
+              <button class="tab-btn active" id="tab-btn-tracks" data-tab="tab-tracks">🎵 Canciones (<span id="count-tracks">0</span>)</button>
+              <button class="tab-btn" id="tab-btn-albums" data-tab="tab-albums">💿 Álbumes (<span id="count-albums">0</span>)</button>
+              <button class="tab-btn" id="tab-btn-playlists" data-tab="tab-playlists">📋 Playlists (<span id="count-playlists">0</span>)</button>
+            </div>
+
+            <!-- Tab Tracks -->
+            <div class="search-tab-content" id="tab-tracks">
+              <table class="tracks-table">
+                <thead>
+                  <tr>
+                    <th class="col-num">#</th>
+                    <th style="width: 40px;"></th>
+                    <th>Título</th>
+                    <th>Álbum</th>
+                    <th class="col-time">Duración</th>
+                    <th style="width: 140px; text-align: right;">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="catalog-tracks-tbody"></tbody>
+              </table>
+            </div>
+
+            <!-- Tab Albums -->
+            <div class="search-tab-content" id="tab-albums" style="display: none;">
+              <div class="cards-grid" id="catalog-albums-grid"></div>
+            </div>
+
+            <!-- Tab Playlists -->
+            <div class="search-tab-content" id="tab-playlists" style="display: none;">
+              <div class="cards-grid" id="catalog-playlists-grid"></div>
+            </div>
+          </div>
+
+          <!-- Playlist Results Container (Hidden until search) -->
+          <div id="playlist-results-container" style="display: none;">
+            <!-- Hero Banner -->
+            <div class="playlist-hero">
+              <div class="playlist-cover-wrap">
+                <img id="hero-cover" class="playlist-cover" src="" alt="Portada" />
+              </div>
+              <div class="playlist-details">
+                <div class="playlist-type">PLAYLIST PÚBLICA</div>
+                <h1 class="playlist-title" id="hero-title">Nombre de la Playlist</h1>
+                <p id="hero-desc" style="color: var(--text-secondary); font-size: 13px; max-width: 700px;"></p>
+                <div class="playlist-meta">
+                  <span id="hero-owner" style="font-weight: 600; color: #fff;">Spotify</span>
+                  <span class="meta-dot"></span>
+                  <span id="hero-track-count">0 canciones</span>
+                  <span class="meta-dot"></span>
+                  <span id="hero-total-duration">--</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action Controls Bar -->
+            <div class="action-controls">
+              <div class="controls-group-left">
+                <div class="control-item">
+                  <label for="select-format">Formato:</label>
+                  <select id="select-format" class="select-styled">
+                    <option value="mp3-320">MP3 - 320 kbps (Alta Calidad)</option>
+                    <option value="mp3-192">MP3 - 192 kbps (Estándar)</option>
+                    <option value="flac">FLAC (Lossless Sin Pérdida)</option>
+                    <option value="m4a">M4A / AAC (256 kbps - Apple)</option>
+                    <option value="opus">OPUS (Alta Fidelidad)</option>
+                    <option value="wav">WAV (Audio Sin Comprimir)</option>
+                  </select>
+                </div>
+
+                <div class="control-item">
+                  <label for="select-concurrency">Descargas simultáneas:</label>
+                  <select id="select-concurrency" class="select-styled">
+                    <option value="1">1 canción a la vez</option>
+                    <option value="2">2 en paralelo</option>
+                    <option value="3" selected>3 en paralelo (Recomendado)</option>
+                    <option value="5">5 en paralelo (Rápido)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="controls-group-right">
+                <button class="btn btn-secondary btn-sm" id="btn-download-all">
+                  Descargar Todo (<span id="all-count-btn">0</span>)
+                </button>
+                <button class="btn btn-primary" id="btn-download-selected">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                    <polyline points="7 10 12 15 17 10"></polyline>
+                    <line x1="12" y1="15" x2="12" y2="3"></line>
+                  </svg>
+                  <span>Descargar Seleccionadas (<span id="selected-count-btn">0</span>)</span>
+                </button>
+              </div>
+            </div>
+
+            <!-- Toolbar & Filter -->
+            <div class="table-toolbar">
+              <div class="toolbar-left">
+                <label class="selection-toggle">
+                  <input type="checkbox" id="check-all-tracks" class="custom-checkbox" checked />
+                  <span>Seleccionar Todas</span>
+                </label>
+                <span id="selection-summary">0 seleccionadas de 0 canciones</span>
+              </div>
+              <input
+                type="text"
+                class="table-filter-input"
+                id="filter-tracks-input"
+                placeholder="Filtrar canciones o artistas..."
+              />
+            </div>
+
+            <!-- Tracks Table -->
+            <table class="tracks-table">
+              <thead>
+                <tr>
+                  <th class="col-num">#</th>
+                  <th class="col-check"></th>
+                  <th>Título</th>
+                  <th>Álbum</th>
+                  <th class="col-time">Duración</th>
+                  <th class="col-status">Estado</th>
+                </tr>
+              </thead>
+              <tbody id="tracks-tbody">
+                <!-- Injected via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Active Downloads View -->
+        <section class="view-section" id="downloads-view">
+          <div class="downloads-overview">
+            <div class="stat-card">
+              <span class="stat-label">Total en Cola</span>
+              <span class="stat-val" id="stat-total">0</span>
+            </div>
+            <div class="stat-card accent">
+              <span class="stat-label">En Progreso</span>
+              <span class="stat-val" id="stat-progress">0</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Completadas</span>
+              <span class="stat-val" id="stat-completed" style="color: var(--accent);">0</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-label">Fallidas</span>
+              <span class="stat-val" id="stat-failed" style="color: var(--danger);">0</span>
+            </div>
+          </div>
+
+          <div class="downloads-actions-bar">
+            <div>
+              <h3 style="font-size: 16px; font-weight: 700;">Cola de Procesamiento</h3>
+              <p style="font-size: 12px; color: var(--text-muted);" id="downloads-dir-preview">Destino: ~/Downloads/SnapMusic</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+              <button class="btn btn-secondary btn-sm" id="btn-open-dest-folder">Abrir Carpeta</button>
+              <button class="btn btn-danger btn-sm" id="btn-cancel-all-downloads">Cancelar Todas</button>
+            </div>
+          </div>
+
+          <div class="downloads-list" id="active-downloads-container">
+            <!-- Active download cards injected dynamically -->
+            <div class="empty-state" id="empty-downloads-state" style="padding: 40px 0;">
+              <p>No hay descargas en curso actualmente.</p>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <!-- Bottom Music Player Bar (Spotify Style) -->
+      <footer class="bottom-player" id="bottom-player" style="display: none;">
+        <div class="player-left">
+          <img id="player-track-cover" class="player-cover" src="" alt="Cover" />
+          <div class="player-track-meta">
+            <span class="player-title" id="player-track-title">Sin reproducción</span>
+            <span class="player-artist" id="player-track-artist">-</span>
+          </div>
+        </div>
+
+        <div class="player-center">
+          <div class="player-controls-buttons">
+            <button class="btn-player-control btn-player-play" id="btn-player-toggle" title="Reproducir / Pausa">
+              <svg id="icon-play" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              <svg id="icon-pause" style="display: none;" width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
+            </button>
+          </div>
+          <div class="player-progress-container">
+            <span class="time-label" id="player-time-current">0:00</span>
+            <input type="range" class="player-slider" id="player-seek" value="0" min="0" max="100" />
+            <span class="time-label" id="player-time-total">0:30</span>
+          </div>
+        </div>
+
+        <div class="player-right">
+          <button class="btn-player-control" id="btn-player-mute" title="Silenciar">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+          </button>
+          <input type="range" class="volume-slider" id="player-volume" value="80" min="0" max="100" />
+        </div>
+      </footer>
+    </main>
+  </div>
+
+  <!-- License Activation Modal -->
+  <div class="modal-overlay" id="license-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Licencia & Activación de SnapMusic</h3>
+        <button class="modal-close" id="btn-close-license">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="info-box">
+          SnapMusic está protegido por hardware. Para activar tu copia, proporciona tu <strong>Machine ID</strong> al administrador para que genere tu clave de activación.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Tu Machine ID (Hardware Único):</label>
+          <div class="input-with-button">
+            <input type="text" class="form-input" id="license-machine-id" readonly style="font-family: monospace; font-weight: 700; color: #8be9fd;" />
+            <button class="btn btn-secondary btn-sm" id="btn-copy-machine-id">Copiar ID</button>
+          </div>
+          <small class="form-hint">Este identificador está vinculado a la placa madre de tu equipo.</small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Token de Activación:</label>
+          <textarea class="form-input" id="license-token-input" rows="3" placeholder="Pega aquí el token que te entregó el desarrollador..."></textarea>
+        </div>
+
+        <div id="license-status-card" style="background: rgba(255,255,255,0.04); padding: 14px; border-radius: var(--radius-sm); font-size: 13px; line-height: 1.6;">
+          <div><strong>Estado:</strong> <span id="license-info-state" style="color: var(--warning);">Verificando...</span></div>
+          <div><strong>Titular:</strong> <span id="license-info-client">-</span></div>
+          <div><strong>Vigencia:</strong> <span id="license-info-expiry">-</span></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-license">Cerrar</button>
+        <button class="btn btn-primary" id="btn-activate-license">Activar Licencia</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Ajustes & Configuración de API</h3>
+        <button class="modal-close" id="btn-close-settings">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18"></line>
+            <line x1="6" y1="6" x2="18" y2="18"></line>
+          </svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div class="info-box">
+          SnapMusic puede leer playlists públicas directamente, pero para playlists grandes y sin límites de consulta, recomendamos configurar tus credenciales oficiales gratuitas de desarrollador de Spotify.
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Spotify Client ID:</label>
+          <input type="text" class="form-input" id="setting-client-id" placeholder="Pega tu Client ID aquí..." />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Spotify Client Secret:</label>
+          <div class="input-with-button">
+            <input type="password" class="form-input" id="setting-client-secret" placeholder="Pega tu Client Secret..." />
+            <button class="btn btn-secondary btn-sm" id="btn-toggle-secret">Mostrar</button>
+          </div>
+          <div class="form-hint">
+            Obtén tus credenciales gratis en <a href="#" id="link-spotify-dash">developer.spotify.com/dashboard</a> (Crea una App gratuita de tipo Web API).
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="btn btn-secondary btn-sm" id="btn-test-api">
+            <span>Probar Conexión de API</span>
+          </button>
+          <span id="test-api-status" style="font-size: 12px;"></span>
+        </div>
+
+        <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08);" />
+
+        <div class="form-group">
+          <label class="form-label">Carpeta de Descarga:</label>
+          <div class="input-with-button">
+            <input type="text" class="form-input" id="setting-download-dir" readonly />
+            <button class="btn btn-secondary btn-sm" id="btn-browse-folder">Cambiar...</button>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Formato de Audio Predeterminado:</label>
+          <select id="setting-default-format" class="select-styled" style="width: 100%;">
+            <option value="mp3-320">MP3 - 320 kbps (Alta Calidad)</option>
+            <option value="mp3-192">MP3 - 192 kbps (Estándar)</option>
+            <option value="flac">FLAC (Lossless Sin Pérdida)</option>
+            <option value="m4a">M4A / AAC (256 kbps - Apple)</option>
+            <option value="opus">OPUS (Alta Fidelidad)</option>
+            <option value="wav">WAV (Audio Sin Comprimir)</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Diagnóstico del Sistema:</label>
+          <div class="system-status-grid">
+            <div class="sys-item">
+              <span>yt-dlp:</span>
+              <strong id="sys-ytdlp-status" style="color: var(--accent);">Verificando...</strong>
+            </div>
+            <div class="sys-item">
+              <span>ffmpeg:</span>
+              <strong id="sys-ffmpeg-status" style="color: var(--accent);">Verificando...</strong>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-cancel-settings">Cerrar</button>
+        <button class="btn btn-primary" id="btn-save-settings">Guardar Cambios</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Container -->
+  <div class="toast-container" id="toast-container"></div>
+
+  <script src="js/app.js"></script>
+</body>
+</html>
