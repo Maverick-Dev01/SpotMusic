@@ -121,27 +121,13 @@ npm start
 
 ---
 
-## 🛡️ Sistema de Licencias Criptográfico (Universal License Hub)
+## 🔒 Activación y Licencia de Uso
 
-Para evitar la distribución no autorizada o copia indebida del software, la aplicación cuenta con un sistema de **bloqueo por hardware (Hardware Node-Locking)**:
+SpotMusic cuenta con un sistema de activación personal vinculado al hardware del equipo (Machine ID):
 
-1. **Machine ID Inmutable:**
-   - En macOS: Extrae el `IOPlatformUUID` de la placa madre.
-   - En Windows: Extrae el `Win32_ComputerSystemProduct.UUID`.
-2. **Firma Criptográfica HMAC-SHA256:**
-   - La licencia es un token firmado matemáticamente que contiene el Machine ID, nombre del cliente, fecha de emisión y fecha de caducidad.
-   - Si un usuario comparte el token con otra persona, la aplicación lo rechazará automáticamente indicando que el hardware no coincide.
-3. **Portal Web de Generación & Auditoría:**
-   - Ubicado en [`license-portal/index.html`](license-portal/index.html).
-   - Es 100% estático (puedes abrirlo con doble clic o subirlo gratis a Vercel / GitHub Pages).
-   - Permite generar licencias con duraciones: **2 Horas, 24 Horas, 7 Días, 30 Días, 90 Días, 1 Año o Vitalicia / Permanente**.
-   - Incluye **SDKs de verificación listos para copiar** en:
-     - 🐍 **Python** (FastAPI, Flask, Django, PyQt)
-     - ☕ **Java** (Spring Boot, Swing, JavaFX)
-     - 💙 **Flutter / Dart** (Android, iOS, Desktop)
-     - 🍎 **Swift** (macOS, iOS nativo con CryptoKit)
-     - 🐘 **PHP** (Laravel, Symfony, Vanilla)
-     - ⚡ **JavaScript / Node.js** (Electron, Express, Nest)
+- Al abrir la aplicación, en el apartado **Licencia** podrás visualizar tu identificador de equipo (**Machine ID**).
+- Para activar la aplicación y habilitar las descargas, ingresa la clave de activación provista por el desarrollador.
+- Cada licencia es personal, válida únicamente para el equipo autorizado.
 
 ---
 
@@ -181,8 +167,6 @@ npm run build:win
 
 ```
 SpotMusic/
-├── license-portal/            # Portal Web Administrador de Licencias (Universal Hub)
-│   └── index.html             # Generador, Auditor y SDKs (Java, Python, Flutter, Swift, PHP, JS)
 ├── src/
 │   ├── index.html             # Interfaz de usuario (Dark Theme estilo Spotify)
 │   ├── js/
@@ -192,7 +176,7 @@ SpotMusic/
 │   └── services/
 │       ├── spotify.js         # Scraper de embeds y cliente Web API de Spotify
 │       ├── downloader.js      # Orquestador de descargas y conversión con yt-dlp & ffmpeg
-│       ├── licenseService.js  # Lector de UUID de hardware y verificador HMAC-SHA256
+│       ├── licenseService.js  # Lector de UUID de hardware y verificador de token
 │       └── settings.js        # Gestor de configuración persistente en JSON
 ├── main.js                    # Proceso principal de Electron e IPC handlers
 ├── preload.js                 # Bridge seguro de Electron (Context Isolation)
