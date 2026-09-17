@@ -18,6 +18,10 @@ class LicenseService {
     }
 
     this.licenseFile = path.join(userData, 'snapmusic-license.json');
+    this.supabaseUrl = 'https://ekxbhsztryixtstksmiw.supabase.co';
+    this.supabaseAnonKey = 'sb_publishable__6pHi1TcS0HVmW-XryfCnQ_r5MqzPG9';
+    this.lastOnlineCheck = 0;
+    this.cachedCloudStatus = null;
   }
 
   getMachineId() {
@@ -128,29 +132,236 @@ class LicenseService {
     };
   }
 
-  saveLicense(token) {
-    const check = this.verifyToken(token);
-    if (!check.valid) {
-      return { ...check, machineId: this.getMachineId() };
+  async checkOnlineStatus(token, machineId) {
+    if (!token) return { valid: false, error: 'Token no proporcionado' };
+
+    const hwId = machineId || this.getMachineId();
+
+    // 1. Check directly via Supabase RPC check_license
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4500);
+
+      const res = await fetch(`${this.supabaseUrl}/rest/v1/rpc/check_license`, {
+        method: 'POST',
+        headers: {
+          'apikey': this.supabaseAnonKey,
+          'Authorization': `Bearer ${this.supabaseAnonKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          p_token: token.trim(),
+          p_machine_id: hwId
+        }),
+        signal: controller.signal
+      });
+      clearTimeout(timeoutId);
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data && typeof data === 'object') {
+          if (data.status === 'revoked') {
+            return {
+              valid: false,
+              revoked: true,
+              status: 'revoked',
+              reason: 'REVOKED',
+              error: data.message || 'Esta licencia ha sido REVOCADA por el administrador en KeyForge Pro.'
+            };
+          }
+          if (data.status === 'not_found') {
+            return {
+              valid: false,
+              notFound: true,
+              status: 'not_found',
+              reason: 'NOT_FOUND',
+              error: 'Esta licencia fue eliminada del servidor de licencias.'
+            };
+          }
+          if (data.valid === false) {
+            return {
+              valid: false,
+              status: data.status || 'invalid',
+              reason: data.reason || 'INVALID',
+              error: data.message || 'Licencia rechazada por el servidor.'
+            };
+          }
+          if (data.valid === true) {
+            return {
+              valid: true,
+              onlineVerified: true,
+              status: 'active',
+              clientName: data.clientName,
+              expiresAt: data.expiresAt,
+              isPermanent: data.isPermanent
+            };
+          }
+        }
+      }
+    } catch (rpcErr) {
+      // Network timeout or RPC not yet deployed in Supabase
+    }
+
+    // 2. Fallback: Check KeyForge verify API if available
+    const apiEndpoints = [
+      'https://license-dwtlltjib-lamb-dev.vercel.app/api/verify',
+      'http://localhost:3000/api/verify'
+    ];
+
+    for (const endpoint of apiEndpoints) {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 2000);
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            token: token.trim(),
+            machineId: hwId,
+            secretKey: this.masterSecret
+          }),
+          signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+
+        if (res.ok) {
+          const result = await res.json();
+          if (result.reason === 'REVOKED') {
+            return {
+              valid: false,
+              revoked: true,
+              status: 'revoked',
+              reason: 'REVOKED',
+              error: result.message || 'Esta licencia ha sido REVOCADA por el administrador.'
+            };
+          }
+          if (result.valid) {
+            return { valid: true, onlineVerified: true, ...result };
+          }
+        }
+      } catch (e) {}
+    }
+
+    // If completely offline, report offline but don't block if local signature is mathematically sound
+    return { valid: true, offline: true };
+  }
+
+  async saveLicense(token) {
+    const localCheck = this.verifyToken(token);
+    if (!localCheck.valid) {
+      return { ...localCheck, machineId: this.getMachineId() };
+    }
+
+    // Real-time online verification before activating
+    const machineId = this.getMachineId();
+    const onlineCheck = await this.checkOnlineStatus(token, machineId);
+    if (!onlineCheck.valid) {
+      return {
+        valid: false,
+        revoked: onlineCheck.revoked || false,
+        machineId,
+        error: onlineCheck.error || 'La licencia no es válida en el servidor.'
+      };
     }
 
     try {
-      fs.writeFileSync(this.licenseFile, JSON.stringify({ token, savedAt: Date.now() }, null, 2), 'utf8');
-      return { ...check, machineId: this.getMachineId(), success: true };
+      fs.writeFileSync(
+        this.licenseFile,
+        JSON.stringify({ token, savedAt: Date.now(), lastOnlineCheck: Date.now() }, null, 2),
+        'utf8'
+      );
+      this.lastOnlineCheck = Date.now();
+      return { ...localCheck, machineId, onlineVerified: true, success: true };
     } catch (err) {
-      return { valid: false, machineId: this.getMachineId(), error: 'Error al guardar la licencia: ' + err.message };
+      return { valid: false, machineId, error: 'Error al guardar la licencia: ' + err.message };
     }
   }
 
-  getCurrentLicense() {
+  async getCurrentLicense(forceOnline = false) {
     const machineId = this.getMachineId();
     try {
       if (fs.existsSync(this.licenseFile)) {
         const data = JSON.parse(fs.readFileSync(this.licenseFile, 'utf8'));
         if (data && data.token) {
-          const status = this.verifyToken(data.token);
+          // If already marked revoked locally
+          if (data.revoked) {
+            return {
+              valid: false,
+              revoked: true,
+              hasLicense: true,
+              token: data.token,
+              machineId,
+              error: data.revocationReason || 'Esta licencia fue REVOCADA por el administrador en KeyForge Pro.'
+            };
+          }
+
+          const localStatus = this.verifyToken(data.token);
+          if (!localStatus.valid) {
+            return {
+              ...localStatus,
+              token: data.token,
+              hasLicense: true,
+              machineId
+            };
+          }
+
+          // Check online if forced or cache older than 3 minutes
+          const now = Date.now();
+          const shouldCheckOnline = forceOnline || (now - this.lastOnlineCheck > 180000);
+
+          if (shouldCheckOnline) {
+            const cloudCheck = await this.checkOnlineStatus(data.token, machineId);
+            this.lastOnlineCheck = now;
+
+            if (cloudCheck.revoked) {
+              // Update local file to record revoked state
+              try {
+                fs.writeFileSync(
+                  this.licenseFile,
+                  JSON.stringify({
+                    ...data,
+                    revoked: true,
+                    revokedAt: now,
+                    revocationReason: cloudCheck.error
+                  }, null, 2),
+                  'utf8'
+                );
+              } catch (e) {}
+
+              return {
+                valid: false,
+                revoked: true,
+                hasLicense: true,
+                token: data.token,
+                machineId,
+                error: cloudCheck.error
+              };
+            }
+
+            if (cloudCheck.notFound) {
+              return {
+                valid: false,
+                notFound: true,
+                hasLicense: true,
+                token: data.token,
+                machineId,
+                error: cloudCheck.error
+              };
+            }
+
+            if (cloudCheck.onlineVerified) {
+              return {
+                ...localStatus,
+                token: data.token,
+                hasLicense: true,
+                onlineVerified: true,
+                machineId
+              };
+            }
+          }
+
           return {
-            ...status,
+            ...localStatus,
             token: data.token,
             hasLicense: true,
             machineId
@@ -173,6 +384,7 @@ class LicenseService {
       if (fs.existsSync(this.licenseFile)) {
         fs.unlinkSync(this.licenseFile);
       }
+      this.lastOnlineCheck = 0;
       return { success: true };
     } catch (e) {
       return { success: false, error: e.message };

@@ -196,15 +196,24 @@ document.addEventListener('DOMContentLoaded', async () => {
         licenseInfoExpiry.textContent = lic.isPermanent ? 'Permanente (Sin vencimiento)' : new Date(lic.expiresAt).toLocaleDateString();
       } else {
         badgeLicensePill.className = 'license-pill expired';
-        badgeLicensePill.textContent = lic.expired ? 'Expirada' : 'Inactiva';
-        licenseInfoState.textContent = lic.expired ? 'EXPIRADA ✗' : 'NO ACTIVADA ✗';
+        badgeLicensePill.textContent = lic.revoked ? 'Revocada' : (lic.expired ? 'Expirada' : 'Inactiva');
+        licenseInfoState.textContent = lic.revoked ? 'REVOCADA ✗' : (lic.expired ? 'EXPIRADA ✗' : 'NO ACTIVADA ✗');
         licenseInfoState.style.color = '#e91429';
-        licenseInfoClient.textContent = '-';
+        licenseInfoClient.textContent = lic.clientName || '-';
         licenseInfoExpiry.textContent = lic.error || 'Requiere clave de activación';
       }
     } catch (e) {
       console.warn('License check error:', e);
     }
+  }
+
+  // Real-time revocation listener from background heartbeat
+  if (window.snapAPI && window.snapAPI.onLicenseRevoked) {
+    window.snapAPI.onLicenseRevoked((lic) => {
+      refreshLicenseUI();
+      showToast(lic.error || '⚠️ Tu licencia ha sido REVOCADA por el administrador en KeyForge Pro.', true);
+      licenseModal.classList.add('open');
+    });
   }
 
   btnCopyMachineId.addEventListener('click', () => {

@@ -71,6 +71,16 @@ if (!gotTheLock) {
 
     createWindow();
 
+    // Heartbeat check every 2.5 minutes for cloud license revocation
+    setInterval(async () => {
+      try {
+        const license = await licenseService.getCurrentLicense(true);
+        if (license && license.revoked && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('license-revoked', license);
+        }
+      } catch (e) {}
+    }, 150000);
+
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
     });
@@ -141,11 +151,11 @@ ipcMain.handle('fetch-playlist', async (event, url) => {
 });
 
 ipcMain.handle('get-license-status', async () => {
-  return licenseService.getCurrentLicense();
+  return await licenseService.getCurrentLicense();
 });
 
 ipcMain.handle('activate-license', async (event, token) => {
-  return licenseService.saveLicense(token);
+  return await licenseService.saveLicense(token);
 });
 
 ipcMain.handle('remove-license', async () => {
@@ -345,11 +355,11 @@ ipcMain.handle('install-update', async (event, filePath) => {
 
 ipcMain.handle('start-batch-download', async (event, { tracks, format, concurrency, downloadDir }) => {
   try {
-    const license = licenseService.getCurrentLicense();
+    const license = await licenseService.getCurrentLicense(true);
     if (!license.valid) {
       return {
         success: false,
-        error: 'Copia no activada: Se requiere una licencia válida para descargar música. Ve al menú de Activación de Licencia.'
+        error: license.error || 'Copia no activada o licencia revocada. Se requiere una licencia activa para descargar música.'
       };
     }
 

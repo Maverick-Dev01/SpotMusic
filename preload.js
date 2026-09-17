@@ -36,6 +36,11 @@ contextBridge.exposeInMainWorld('snapAPI', {
     ipcRenderer.on('download-progress', listener);
     return () => ipcRenderer.removeListener('download-progress', listener);
   },
+  onLicenseRevoked: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('license-revoked', listener);
+    return () => ipcRenderer.removeListener('license-revoked', listener);
+  },
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
   closeWindow: () => ipcRenderer.send('window-close')
