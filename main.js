@@ -413,48 +413,10 @@ ipcMain.handle('get-track-audio', async (event, track) => {
     console.warn('[StreamResolver error]', resErr.message);
   }
 
-  // 2. Query iTunes Preview Search API as fallback
-  try {
-    const cleanTitle = cleanTitleForSearch(track.name);
-    const mainArtist = (track.artists || '').split(/[,&/]/)[0].trim();
-
-    const queries = [];
-    if (cleanTitle && mainArtist) queries.push(`${cleanTitle} ${mainArtist}`);
-    if (track.name !== cleanTitle && mainArtist) queries.push(`${track.name} ${mainArtist}`);
-    if (cleanTitle) queries.push(cleanTitle);
-
-    for (const q of queries) {
-      try {
-        const itunesTerm = encodeURIComponent(q.trim());
-        const itunesRes = await fetch(`https://itunes.apple.com/search?term=${itunesTerm}&entity=song&limit=3`);
-        if (itunesRes.ok) {
-          const data = await itunesRes.json();
-          if (data.results && data.results.length > 0) {
-            for (const item of data.results) {
-              if (item.previewUrl) {
-                streamAudioCache.set(cacheKey, item.previewUrl);
-                return { success: true, url: item.previewUrl, source: 'itunes', durationMs: 30000, durationStr: '0:30' };
-              }
-            }
-          }
-        }
-      } catch (subErr) {
-        console.warn('[iTunes search query failed]', q, subErr.message);
-      }
-    }
-  } catch (err) {
-    console.warn('[iTunes preview lookup failed]', err.message);
-  }
-
-  // 3. Fallback to Spotify preview if present
-  if (track.preview_url && typeof track.preview_url === 'string' && track.preview_url.startsWith('http')) {
-    streamAudioCache.set(cacheKey, track.preview_url);
-    return { success: true, url: track.preview_url, source: 'spotify', durationMs: 30000, durationStr: '0:30' };
-  }
-
+  // 30-second previews are permanently removed. Always play full studio songs.
   return {
     success: false,
-    error: 'No se pudo obtener el stream de audio para esta pista'
+    error: 'No se pudo resolver el stream de audio completo para esta canción. Intenta nuevamente.'
   };
 });
 

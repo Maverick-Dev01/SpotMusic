@@ -1,6 +1,17 @@
 const https = require('https');
 
+const httpsAgent = new https.Agent({
+  keepAlive: true,
+  maxSockets: 30,
+  keepAliveMsecs: 60000
+});
+
 class SpotifyService {
+  constructor() {
+    this.searchCache = new Map();
+    this.searchCacheTTL = 10 * 60 * 1000; // 10 minutes
+  }
+
   extractSpotifyInfo(input) {
     if (!input || typeof input !== 'string') return null;
     const clean = input.trim();
@@ -41,7 +52,8 @@ class SpotifyService {
 
   async makeHttpRequest(options, postData = null) {
     return new Promise((resolve, reject) => {
-      const req = https.request(options, (res) => {
+      const opts = { agent: httpsAgent, ...options };
+      const req = https.request(opts, (res) => {
         let body = '';
         res.on('data', (chunk) => { body += chunk; });
         res.on('end', () => {
@@ -79,6 +91,10 @@ class SpotifyService {
   }
 
   async getClientCredentialsToken(clientId, clientSecret) {
+    if (this.cachedToken && this.tokenExpiresAt && Date.now() < this.tokenExpiresAt) {
+      return this.cachedToken;
+    }
+
     const authHeader = Buffer.from(`${clientId.trim()}:${clientSecret.trim()}`).toString('base64');
     const postData = 'grant_type=client_credentials';
 
@@ -96,7 +112,10 @@ class SpotifyService {
 
     const response = await this.makeHttpRequest(options, postData);
     if (response && response.access_token) {
-      return response.access_token;
+      this.cachedToken = response.access_token;
+      const expiresInSec = response.expires_in || 3600;
+      this.tokenExpiresAt = Date.now() + (expiresInSec - 60) * 1000;
+      return this.cachedToken;
     }
     throw new Error('No se pudo obtener el token de acceso de Spotify. Revisa tu Client ID y Secret.');
   }
@@ -278,6 +297,13 @@ class SpotifyService {
     }
 
     const cleanQuery = query.trim();
+    const cacheKey = cleanQuery.toLowerCase();
+
+    // Return instant cached results if available
+    const cached = this.searchCache.get(cacheKey);
+    if (cached && (Date.now() - cached.timestamp < this.searchCacheTTL)) {
+      return cached.data;
+    }
 
     // 1. Try Spotify Official API if credentials are provided
     if (clientId && clientSecret) {
@@ -288,7 +314,7 @@ class SpotifyService {
         const options = {
           hostname: 'api.spotify.com',
           port: 443,
-          path: `/v1/search?q=${encoded}&type=track,album,playlist&limit=20`,
+          path: `/v1/search?q=${encoded}&type=track,album,playlist&limit=10`,
           method: 'GET',
           headers: {
             'Authorization': `Bearer ${token}`,
@@ -308,7 +334,7 @@ class SpotifyService {
             duration_ms: t.duration_ms || 0,
             duration_str: this.formatDuration(t.duration_ms),
             cover_url: t.album?.images?.[0]?.url || null,
-            preview_url: t.preview_url || null,
+            preview_url: null, // Always prioritize full audio stream resolver
             spotify_url: t.external_urls?.spotify || ''
           };
         });
@@ -333,44 +359,16 @@ class SpotifyService {
           spotify_url: p.external_urls?.spotify || `https://open.spotify.com/playlist/${p.id}`
         }));
 
-        // Fetch top recommendations from primary artist
-        let recommendations = [];
-        if (res.tracks?.items?.length > 0 && res.tracks.items[0].artists?.[0]?.id) {
-          try {
-            const artistId = res.tracks.items[0].artists[0].id;
-            const topTracksRes = await this.makeHttpRequest({
-              hostname: 'api.spotify.com',
-              port: 443,
-              path: `/v1/artists/${artistId}/top-tracks?market=ES`,
-              method: 'GET',
-              headers: {
-                'Authorization': `Bearer ${token}`,
-                'User-Agent': 'SnapMusic/1.0'
-              }
-            });
+        const resultData = { tracks, albums, playlists, recommendations: [] };
 
-            if (topTracksRes && topTracksRes.tracks) {
-              recommendations = topTracksRes.tracks
-                .filter((rt) => !tracks.some((tr) => tr.id === rt.id))
-                .slice(0, 10)
-                .map((t) => ({
-                  id: t.id,
-                  name: t.name,
-                  artists: (t.artists || []).map((a) => a.name).join(', ') || 'Desconocido',
-                  album: t.album?.name || '',
-                  duration_ms: t.duration_ms || 0,
-                  duration_str: this.formatDuration(t.duration_ms),
-                  cover_url: t.album?.images?.[0]?.url || null,
-                  preview_url: t.preview_url || null,
-                  spotify_url: t.external_urls?.spotify || ''
-                }));
-            }
-          } catch (e) {
-            // Ignore recommendations error
-          }
+        // Cache in memory for instant reuse
+        if (this.searchCache.size > 200) {
+          const firstKey = this.searchCache.keys().next().value;
+          this.searchCache.delete(firstKey);
         }
+        this.searchCache.set(cacheKey, { timestamp: Date.now(), data: resultData });
 
-        return { tracks, albums, playlists, recommendations };
+        return resultData;
       } catch (err) {
         console.warn('Spotify catalog search error, falling back to public iTunes search:', err.message);
       }

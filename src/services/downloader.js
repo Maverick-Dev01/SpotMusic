@@ -22,24 +22,7 @@ class DownloaderService {
     const paths = [];
 
     // 1. Packaged electron app resources path (process.resourcesPath/bin)
-    if (process.resourcesPath) {
-      paths.push(path.join(process.resourcesPath, 'bin', binaryName));
-      paths.push(path.join(process.resourcesPath, binaryName));
-    }
-
-    // 2. Dev environment (bin/<platform>/ or bin/)
-    paths.push(path.join(__dirname, '..', '..', 'bin', platformFolder, binaryName));
-    paths.push(path.join(__dirname, '..', '..', 'bin', binaryName));
-
-    // 3. User data directory if dynamically downloaded
-    try {
-      const { app } = require('electron');
-      if (app && app.getPath) {
-        paths.push(path.join(app.getPath('userData'), 'bin', binaryName));
-      }
-    } catch (e) {}
-
-    // 4. Standard system paths
+    // 1. Standard fast system paths first (eliminates 10s PyInstaller decompression overhead on macOS)
     if (isWin) {
       const localAppData = process.env.LOCALAPPDATA || '';
       const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
@@ -53,6 +36,24 @@ class DownloaderService {
       paths.push('/usr/local/bin/' + binaryName);
       paths.push(path.join(process.env.HOME || '', '.local/bin', binaryName));
     }
+
+    // 2. Production app bundle (resources/bin/ or resources/)
+    if (process.resourcesPath) {
+      paths.push(path.join(process.resourcesPath, 'bin', binaryName));
+      paths.push(path.join(process.resourcesPath, binaryName));
+    }
+
+    // 3. Dev environment (bin/<platform>/ or bin/) fallback
+    paths.push(path.join(__dirname, '..', '..', 'bin', platformFolder, binaryName));
+    paths.push(path.join(__dirname, '..', '..', 'bin', binaryName));
+
+    // 4. User data directory if dynamically downloaded
+    try {
+      const { app } = require('electron');
+      if (app && app.getPath) {
+        paths.push(path.join(app.getPath('userData'), 'bin', binaryName));
+      }
+    } catch (e) {}
 
     return paths;
   }
@@ -411,23 +412,16 @@ class DownloaderService {
 
     const cleanTitle = (title || '').replace(/\(feat\.[^)]+\)/gi, '').replace(/\(ft\.[^)]+\)/gi, '').trim();
     const firstArtist = (artist || '').split(/[,&/]/)[0].trim();
-    const query = `ytsearch3:${cleanTitle} ${firstArtist} official audio`;
+    const query = `ytsearch1:${cleanTitle} ${firstArtist} official audio`;
     return new Promise((resolve) => {
       const args = [
         '--no-warnings',
         '--no-playlist',
-        '--js-runtimes', 'node',
         '--extractor-args', 'youtube:player_client=android,web',
         '-g',
         '-f', '140/bestaudio/best',
         query
       ];
-
-      if (durationMs && durationMs > 45000) {
-        const maxDur = Math.round((durationMs / 1000) * 1.25);
-        const minDur = Math.round((durationMs / 1000) * 0.75);
-        args.push('--match-filter', `duration <= ${maxDur} & duration >= ${minDur}`);
-      }
 
       let child;
       try {
@@ -456,7 +450,7 @@ class DownloaderService {
       setTimeout(() => {
         try { child.kill('SIGTERM'); } catch (e) {}
         resolve(null);
-      }, 20000);
+      }, 8000);
     });
   }
 }

@@ -261,35 +261,25 @@ class StreamResolver {
     }
 
     const promise = (async () => {
-      // Tier 1: YouTube direct stream extraction (Official Studio Audio, accurate length)
-      const ytResult = await this.resolveYouTube(title, artist, durationMs);
-      if (ytResult && ytResult.audioUrl) {
-        return ytResult;
-      }
-
-      // Tier 2: JioSaavn (Fast, Full 320kbps CDNs - strictly matched by artist & duration)
+      // Tier 1: JioSaavn (Ultra-fast 250ms, Full 320kbps CDNs - strictly matched by artist & duration)
       const jioResult = await this.resolveJioSaavn(title, artist, durationMs);
       if (jioResult && jioResult.audioUrl) {
         return jioResult;
       }
 
-      // Tier 3: SoundCloud progressive stream (strictly matched)
+      // Tier 2: YouTube direct stream extraction (Official Studio Audio, accurate length)
+      const ytResult = await this.resolveYouTube(title, artist, durationMs);
+      if (ytResult && ytResult.audioUrl) {
+        return ytResult;
+      }
+
+      // Tier 3: SoundCloud stream (strictly matched)
       const scResult = await this.resolveSoundCloud(title, artist, durationMs);
       if (scResult && scResult.audioUrl) {
         return scResult;
       }
 
-      // Tier 4: Fallback to 30s preview (Spotify / iTunes)
-      if (fallbackPreviewUrl) {
-        return {
-          audioUrl: fallbackPreviewUrl,
-          durationMs: 30000,
-          durationStr: '0:30',
-          format: 'Vista Previa (30s)',
-          source: 'preview'
-        };
-      }
-
+      // Full songs only - 30-second previews are permanently removed
       return null;
     })();
 

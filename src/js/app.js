@@ -565,7 +565,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         console.warn('Autocomplete search failed:', err.message);
         hideSuggestions();
       }
-    }, 350);
+    }, 180);
   });
 
   function renderSuggestions(tracks) {
@@ -583,7 +583,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <span class="suggestion-artist" title="${track.artists}">${track.artists}</span>
         </div>
         <div class="suggestion-actions">
-          <button class="btn-suggestion-play" title="Preescuchar (30s)">
+          <button class="btn-suggestion-play" title="Reproducir canción completa">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           </button>
           <button class="btn-suggestion-download" title="Descargar pista">
@@ -641,7 +641,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       tr.innerHTML = `
         <td class="col-num">${idx + 1}</td>
         <td>
-          <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir Preview">
+          <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir canción completa">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           </button>
         </td>
@@ -743,7 +743,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           tr.innerHTML = `
             <td class="col-num">${idx + 1}</td>
             <td>
-              <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir Preview">
+              <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir canción completa">
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
               </button>
             </td>
@@ -897,7 +897,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         </td>
         <td>
           <div class="col-title">
-            <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir Preview">
+            <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir canción completa">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
             </button>
             <img class="track-thumb" src="${track.cover_url || ''}" alt="Cover" onerror="this.style.display='none'" />
