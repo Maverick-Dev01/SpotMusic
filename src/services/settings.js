@@ -9,8 +9,8 @@ class SettingsService {
     const defaultDownloads = path.join(os.homedir(), 'Downloads', 'SnapMusic');
 
     this.defaultSettings = {
-      spotifyClientId: '',
-      spotifyClientSecret: '',
+      spotifyClientId: 'e0e9be08cc8f4815a6b726ee648016f2',
+      spotifyClientSecret: 'fbed0d551e7e410181fe9bf80bb16dcc',
       downloadDir: defaultDownloads,
       defaultFormat: 'mp3-320', // mp3-320, mp3-192, flac, m4a, opus, wav
       concurrency: 3, // 1 to 5 parallel downloads
@@ -36,7 +36,13 @@ class SettingsService {
     try {
       if (fs.existsSync(this.configPath)) {
         const data = fs.readFileSync(this.configPath, 'utf8');
-        return { ...this.defaultSettings, ...JSON.parse(data) };
+        const parsed = JSON.parse(data);
+        return {
+          ...this.defaultSettings,
+          ...parsed,
+          spotifyClientId: (parsed.spotifyClientId && parsed.spotifyClientId.trim()) || this.defaultSettings.spotifyClientId,
+          spotifyClientSecret: (parsed.spotifyClientSecret && parsed.spotifyClientSecret.trim()) || this.defaultSettings.spotifyClientSecret
+        };
       }
     } catch (err) {
       console.error('Error reading settings file, returning defaults:', err);

@@ -1574,9 +1574,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           }
         }
 
-        if (manual) {
-          openUpdateModal(info);
-        }
+        openUpdateModal(info);
       } else {
         if (settingsUpdateStatus) {
           settingsUpdateStatus.textContent = `SpotMusic está actualizado a la última versión (v${info.currentVersion})`;

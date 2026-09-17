@@ -53,16 +53,41 @@ class StreamResolver {
   }
 
   matchScore(title, artist, durationMs, candidate) {
-    const titleScore = this.similarity(this.cleanTitle(title), candidate.title || '');
+    const cleanT = this.cleanTitle(title);
+    const candidateTitle = candidate.title || '';
+    const titleScore = this.similarity(cleanT, candidateTitle);
+
+    // Filter out remixes/covers/mixes unless requested
+    const unwanted = ['remix', 'nightcore', '8d audio', 'slowed', 'reverb', 'cover', 'live', 'extended mix', '1 hour', '10 hours', 'mix'];
+    const titleLower = title.toLowerCase();
+    const candLower = candidateTitle.toLowerCase();
+    for (const word of unwanted) {
+      if (!titleLower.includes(word) && candLower.includes(word)) {
+        return 0; // REJECT remixes/covers/mixes if not in requested title
+      }
+    }
+
     const firstArtist = (artist || '').split(/[,&/]/)[0].trim();
-    const artistScore = this.similarity(firstArtist, candidate.artist || '');
+    const candidateArtist = candidate.artist || candidate.uploader || '';
+    const artistScore = this.similarity(firstArtist, candidateArtist);
+
+    // Duration delta check: if expected duration is known, strictly enforce < 25% difference
+    if (durationMs > 45000 && candidate.durationMs > 0) {
+      const delta = Math.abs(durationMs - candidate.durationMs) / durationMs;
+      if (delta > 0.25) {
+        return 0; // REJECT candidates whose duration differs by > 25% (e.g. 12-minute DJ mix for 3-minute song)
+      }
+    }
+
+    // Reject if title or artist matching is too low
+    if (titleScore < 0.60) return 0;
+    if (artistScore < 0.35 && !candLower.includes(this.normalize(firstArtist))) return 0;
+
     const durationScore = durationMs && candidate.durationMs
       ? Math.max(0, 1 - Math.abs(durationMs - candidate.durationMs) / Math.max(durationMs, 1))
-      : 0.5;
+      : 0.8;
 
-    // Reject poor matches
-    if (titleScore < 0.65) return 0;
-    return titleScore * 0.65 + artistScore * 0.25 + durationScore * 0.1;
+    return titleScore * 0.45 + artistScore * 0.35 + durationScore * 0.20;
   }
 
   bestMatch(title, artist, durationMs, candidates) {
@@ -141,19 +166,19 @@ class StreamResolver {
     }
   }
 
-  async resolveYouTube(title, artist) {
+  async resolveYouTube(title, artist, durationMs = 0) {
     if (!this.downloaderService || typeof this.downloaderService.getAudioStreamUrl !== 'function') {
       return null;
     }
     try {
       const cleanT = this.cleanTitle(title);
       const firstArtist = (artist || '').split(/[,&/]/)[0].trim();
-      const streamUrl = await this.downloaderService.getAudioStreamUrl(cleanT || title, firstArtist || artist);
+      const streamUrl = await this.downloaderService.getAudioStreamUrl(cleanT || title, firstArtist || artist, durationMs);
       if (streamUrl && streamUrl.startsWith('http')) {
         return {
           audioUrl: streamUrl,
-          durationMs: 0,
-          format: 'YouTube Direct Audio (Full)',
+          durationMs: durationMs || 0,
+          format: 'YouTube Official Audio (Full)',
           source: 'youtube',
           title: title,
           artist: artist
@@ -171,29 +196,41 @@ class StreamResolver {
 
     for (const cId of clientIds) {
       try {
-        const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${cId}&limit=4`;
+        const url = `https://api-v2.soundcloud.com/search/tracks?q=${encodeURIComponent(query)}&client_id=${cId}&limit=5`;
         const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
         if (!res.ok) continue;
         const data = await res.json();
         if (!data || !data.collection || !data.collection.length) continue;
 
+        const candidates = [];
         for (const track of data.collection) {
-          const prog = track.media?.transcodings?.find(t => t.format?.protocol === 'progressive');
+          const durSec = Math.round((track.duration || 180000) / 1000);
+          candidates.push({
+            track,
+            title: track.title,
+            artist: track.user?.username,
+            durationMs: durSec * 1000
+          });
+        }
+
+        const match = this.bestMatch(title, artist, durationMs, candidates);
+        if (match && match.track) {
+          const prog = match.track.media?.transcodings?.find(t => t.format?.protocol === 'progressive');
           if (prog && prog.url) {
             const streamRes = await fetch(`${prog.url}?client_id=${cId}`, { signal: AbortSignal.timeout(3000) });
             if (streamRes.ok) {
               const streamData = await streamRes.json();
               if (streamData.url) {
-                const durSec = Math.round((track.duration || 180000) / 1000);
+                const durSec = Math.round((match.track.duration || 180000) / 1000);
                 return {
                   audioUrl: streamData.url,
                   durationMs: durSec * 1000,
                   durationStr: this.formatDuration(durSec),
                   format: 'SoundCloud MP3 (Full)',
                   source: 'soundcloud',
-                  coverUrl: track.artwork_url ? track.artwork_url.replace('large', 't500x500') : null,
-                  title: track.title,
-                  artist: track.user?.username
+                  coverUrl: match.track.artwork_url ? match.track.artwork_url.replace('large', 't500x500') : null,
+                  title: match.track.title,
+                  artist: match.track.user?.username
                 };
               }
             }
@@ -224,19 +261,19 @@ class StreamResolver {
     }
 
     const promise = (async () => {
-      // Tier 1: JioSaavn (Fast, Full 320kbps CDNs)
+      // Tier 1: YouTube direct stream extraction (Official Studio Audio, accurate length)
+      const ytResult = await this.resolveYouTube(title, artist, durationMs);
+      if (ytResult && ytResult.audioUrl) {
+        return ytResult;
+      }
+
+      // Tier 2: JioSaavn (Fast, Full 320kbps CDNs - strictly matched by artist & duration)
       const jioResult = await this.resolveJioSaavn(title, artist, durationMs);
       if (jioResult && jioResult.audioUrl) {
         return jioResult;
       }
 
-      // Tier 2: YouTube direct stream extraction
-      const ytResult = await this.resolveYouTube(title, artist);
-      if (ytResult && ytResult.audioUrl) {
-        return ytResult;
-      }
-
-      // Tier 3: SoundCloud progressive stream
+      // Tier 3: SoundCloud progressive stream (strictly matched)
       const scResult = await this.resolveSoundCloud(title, artist, durationMs);
       if (scResult && scResult.audioUrl) {
         return scResult;

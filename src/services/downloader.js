@@ -194,8 +194,10 @@ class DownloaderService {
         message: 'Buscando en YouTube...'
       });
 
-      // Prepare search query
-      const searchQuery = `ytsearch1:${track.name} ${track.artists} audio`;
+      // Prepare clean search query
+      const cleanName = (track.name || '').replace(/\(feat\.[^)]+\)/gi, '').replace(/\(ft\.[^)]+\)/gi, '').trim();
+      const firstArtist = (track.artists || '').split(/[,&/]/)[0].trim();
+      const searchQuery = `ytsearch3:${cleanName} ${firstArtist} official audio`;
 
       const args = [
         '--extractor-args', 'youtube:player_client=android,web',
@@ -210,6 +212,12 @@ class DownloaderService {
         '--newline',
         '--output', outputPattern
       ];
+
+      if (track.duration_ms && track.duration_ms > 45000) {
+        const maxDur = Math.round((track.duration_ms / 1000) * 1.25);
+        const minDur = Math.round((track.duration_ms / 1000) * 0.75);
+        args.push('--match-filter', `duration <= ${maxDur} & duration >= ${minDur}`);
+      }
 
       if (this.ffmpegPath) {
         args.push('--ffmpeg-location', this.ffmpegPath);
@@ -395,13 +403,15 @@ class DownloaderService {
     this.runningCount = 0;
   }
 
-  async getAudioStreamUrl(title, artist) {
+  async getAudioStreamUrl(title, artist, durationMs = 0) {
     if (!this.ytDlpPath || !fs.existsSync(this.ytDlpPath)) {
       this.ytDlpPath = this.resolveExecutable('yt-dlp', ['/opt/homebrew/bin/yt-dlp', '/usr/local/bin/yt-dlp']);
     }
     if (!this.ytDlpPath) return null;
 
-    const query = `ytsearch1:${title} ${artist} audio`;
+    const cleanTitle = (title || '').replace(/\(feat\.[^)]+\)/gi, '').replace(/\(ft\.[^)]+\)/gi, '').trim();
+    const firstArtist = (artist || '').split(/[,&/]/)[0].trim();
+    const query = `ytsearch3:${cleanTitle} ${firstArtist} official audio`;
     return new Promise((resolve) => {
       const args = [
         '--no-warnings',
@@ -412,6 +422,12 @@ class DownloaderService {
         '-f', '140/bestaudio/best',
         query
       ];
+
+      if (durationMs && durationMs > 45000) {
+        const maxDur = Math.round((durationMs / 1000) * 1.25);
+        const minDur = Math.round((durationMs / 1000) * 0.75);
+        args.push('--match-filter', `duration <= ${maxDur} & duration >= ${minDur}`);
+      }
 
       let child;
       try {
