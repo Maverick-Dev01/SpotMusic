@@ -204,6 +204,7 @@ class LicenseService {
 
     // 2. Fallback: Check KeyForge verify API if available
     const apiEndpoints = [
+      'https://license-eight-ruby.vercel.app/api/verify',
       'https://license-dwtlltjib-lamb-dev.vercel.app/api/verify',
       'http://localhost:3000/api/verify'
     ];
