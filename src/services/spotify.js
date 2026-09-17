@@ -380,8 +380,8 @@ class SpotifyService {
     try {
       const encoded = encodeURIComponent(cleanQuery);
       const [songRes, albumRes] = await Promise.all([
-        fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=25`),
-        fetch(`https://itunes.apple.com/search?term=${encoded}&entity=album&limit=12`)
+        fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=50`),
+        fetch(`https://itunes.apple.com/search?term=${encoded}&entity=album&limit=20`)
       ]);
 
       const songData = songRes.ok ? await songRes.json() : { results: [] };
@@ -399,8 +399,8 @@ class SpotifyService {
         spotify_url: ''
       }));
 
-      const tracks = allTracks.slice(0, 15);
-      const recommendations = allTracks.slice(15, 25);
+      const tracks = allTracks.slice(0, 35);
+      const recommendations = allTracks.slice(35, 50);
 
       const albums = (albumData.results || []).map((a, idx) => ({
         id: String(a.collectionId || `album-${idx}`),
@@ -409,13 +409,69 @@ class SpotifyService {
         cover_url: a.artworkUrl100 ? a.artworkUrl100.replace('100x100bb', '600x600bb') : null,
         total_tracks: a.trackCount || 0,
         release_date: a.releaseDate ? a.releaseDate.split('T')[0] : '',
-        spotify_url: ''
+        spotify_url: a.collectionViewUrl || ''
       }));
 
       return { tracks, albums, playlists: [], recommendations };
     } catch (err) {
       console.error('All catalog search providers failed:', err);
       return { tracks: [], albums: [], playlists: [], recommendations: [] };
+    }
+  }
+
+  async getAlbumTracks(albumId, albumName = 'Álbum', albumCover = null) {
+    if (!albumId) return { success: false, error: 'ID de álbum no proporcionado' };
+
+    // 1. If numeric iTunes collection ID
+    if (/^\d+$/.test(String(albumId))) {
+      try {
+        const res = await fetch(`https://itunes.apple.com/lookup?id=${albumId}&entity=song&limit=200`);
+        if (res.ok) {
+          const data = await res.json();
+          const collection = data.results.find(r => r.wrapperType === 'collection') || {};
+          const trackResults = data.results.filter(r => r.wrapperType === 'track');
+          const cover = collection.artworkUrl100
+            ? collection.artworkUrl100.replace('100x100bb', '600x600bb')
+            : (albumCover || null);
+
+          const tracks = trackResults.map((t, idx) => ({
+            id: String(t.trackId || `album-track-${idx}`),
+            name: t.trackName || 'Pista',
+            artists: t.artistName || collection.artistName || 'Desconocido',
+            album: collection.collectionName || albumName || '',
+            duration_ms: t.trackTimeMillis || 0,
+            duration_str: this.formatDuration(t.trackTimeMillis),
+            cover_url: cover,
+            preview_url: t.previewUrl || null,
+            track_number: t.trackNumber || (idx + 1)
+          }));
+
+          return {
+            success: true,
+            data: {
+              type: 'album',
+              name: collection.collectionName || albumName,
+              owner: collection.artistName || 'Artista',
+              cover_url: cover,
+              total_tracks: tracks.length,
+              release_date: collection.releaseDate ? collection.releaseDate.split('T')[0] : '',
+              tracks: tracks
+            }
+          };
+        }
+      } catch (e) {
+        console.warn('iTunes album lookup error:', e);
+      }
+    }
+
+    // 2. Fallback to Spotify embed or URL
+    try {
+      const url = String(albumId).startsWith('http')
+        ? albumId
+        : `https://open.spotify.com/album/${albumId}`;
+      return await this.fetchPlaylistOrAlbum(url);
+    } catch (e) {
+      return { success: false, error: 'No se pudieron cargar las pistas del álbum: ' + e.message };
     }
   }
 }

@@ -19,6 +19,18 @@ contextBridge.exposeInMainWorld('snapAPI', {
   cancelTrack: (trackId) => ipcRenderer.invoke('cancel-track', trackId),
   cancelAll: () => ipcRenderer.invoke('cancel-all'),
   checkDependencies: () => ipcRenderer.invoke('check-dependencies'),
+  getAlbumTracks: (params) => ipcRenderer.invoke('get-album-tracks', params),
+  getDownloadedTracks: () => ipcRenderer.invoke('get-downloaded-tracks'),
+  showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
+  deleteDownloadedTrack: (filePath) => ipcRenderer.invoke('delete-downloaded-track', filePath),
+  checkForUpdates: (customUrl) => ipcRenderer.invoke('check-for-updates', customUrl),
+  downloadUpdate: (payload) => ipcRenderer.invoke('download-update', payload),
+  installUpdate: (filePath) => ipcRenderer.invoke('install-update', filePath),
+  onUpdateDownloadProgress: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('update-download-progress', listener);
+    return () => ipcRenderer.removeListener('update-download-progress', listener);
+  },
   onDownloadProgress: (callback) => {
     const listener = (event, data) => callback(data);
     ipcRenderer.on('download-progress', listener);

@@ -360,7 +360,7 @@ body.platform-not-mac .titlebar-drag {
 .views-container {
   flex: 1;
   overflow-y: auto;
-  padding: 0 32px 32px 32px;
+  padding: 0 32px 110px 32px;
   position: relative;
 }
 
@@ -1617,6 +1617,130 @@ body.platform-not-mac .bottom-player {
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
+}
+
+/* ==========================================================================
+   Downloaded Music Library (Offline Section in Descargas)
+   ========================================================================== */
+.downloaded-library-section {
+  margin-top: 28px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-md);
+  padding: 20px;
+}
+
+.downloaded-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.downloaded-title-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.downloaded-title-group h3 {
+  font-size: 16px;
+  font-weight: 700;
+  margin: 0;
+}
+
+.downloaded-counter-badge {
+  background: var(--accent);
+  color: #000;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 500px;
+}
+
+.badge-format {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+}
+
+.badge-format.mp3 { color: #1db954; background: rgba(29, 185, 84, 0.12); }
+.badge-format.flac { color: #8be9fd; background: rgba(139, 233, 253, 0.12); }
+.badge-format.m4a { color: #ff79c6; background: rgba(255, 121, 198, 0.12); }
+
+.btn-icon-subtle {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.btn-icon-subtle:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.btn-icon-subtle.danger:hover {
+  color: var(--danger);
+  background: rgba(233, 20, 41, 0.12);
+}
+
+/* ==========================================================================
+   Update Banner & Progress Bar
+   ========================================================================== */
+.update-notification-banner {
+  background: linear-gradient(90deg, #1db954 0%, #15883e 100%);
+  color: #000;
+  padding: 8px 16px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(29, 185, 84, 0.3);
+  animation: slideInDown 0.3s ease;
+}
+
+.update-notification-banner button {
+  background: #000;
+  color: #fff;
+  border: none;
+  border-radius: 500px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.update-progress-bar-container {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 10px 0;
+}
+
+.update-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  width: 0%;
+  transition: width 0.2s ease;
 }
 
 

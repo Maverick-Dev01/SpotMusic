@@ -143,6 +143,30 @@ document.addEventListener('DOMContentLoaded', async () => {
   const licenseInfoClient = document.getElementById('license-info-client');
   const licenseInfoExpiry = document.getElementById('license-info-expiry');
 
+  // DOM Elements - Downloaded Library
+  const downloadedTracksTable = document.getElementById('downloaded-tracks-table');
+  const downloadedTracksTbody = document.getElementById('downloaded-tracks-tbody');
+  const emptyDownloadedState = document.getElementById('empty-downloaded-state');
+  const downloadedTracksCount = document.getElementById('downloaded-tracks-count');
+  const btnRefreshDownloaded = document.getElementById('btn-refresh-downloaded');
+
+  // DOM Elements - Updater
+  const updateModal = document.getElementById('update-modal');
+  const btnCloseUpdateModal = document.getElementById('btn-close-update-modal');
+  const btnLaterUpdate = document.getElementById('btn-later-update');
+  const btnStartUpdate = document.getElementById('btn-start-update');
+  const updateModalVersion = document.getElementById('update-modal-version');
+  const updateModalSubtitle = document.getElementById('update-modal-subtitle');
+  const updateModalNotes = document.getElementById('update-modal-notes');
+  const updateProgressContainer = document.getElementById('update-progress-container');
+  const updateProgressFill = document.getElementById('update-progress-fill');
+  const updateProgressPercent = document.getElementById('update-progress-percent');
+  const updateProgressLabel = document.getElementById('update-progress-label');
+  const topbarUpdateBanner = document.getElementById('topbar-update-banner');
+  const btnCheckUpdates = document.getElementById('btn-check-updates');
+  const settingsAppVersion = document.getElementById('settings-app-version');
+  const settingsUpdateStatus = document.getElementById('settings-update-status');
+
   // Toast Notification
   function showToast(message, isError = false) {
     const container = document.getElementById('toast-container');
@@ -240,6 +264,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       await refreshLicenseUI();
+      renderDownloadedLibrary();
+      setTimeout(() => checkForUpdates(false), 2500);
     } catch (e) {
       console.error('Init error:', e);
     }
@@ -253,12 +279,19 @@ document.addEventListener('DOMContentLoaded', async () => {
       navDownloads.classList.remove('active');
       searchView.classList.add('active');
       downloadsView.classList.remove('active');
+      inputPlaylistUrl.placeholder = 'Pega aquí el enlace de tu playlist (ej: https://open.spotify.com/playlist/...) o busca por artista/canción';
+      const btnText = document.getElementById('search-btn-text');
+      if (btnText) btnText.textContent = 'Buscar';
     } else {
       navSearch.classList.remove('active');
       navDownloads.classList.add('active');
       searchView.classList.remove('active');
       downloadsView.classList.add('active');
+      inputPlaylistUrl.placeholder = 'Filtrar tus canciones descargadas (por título, artista o formato)...';
+      const btnText = document.getElementById('search-btn-text');
+      if (btnText) btnText.textContent = 'Filtrar';
       renderDownloadsView();
+      renderDownloadedLibrary(inputPlaylistUrl.value.trim());
     }
   }
 
@@ -337,6 +370,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function handleSearch() {
     hideSuggestions();
     const query = inputPlaylistUrl.value.trim();
+
+    // If currently in Downloads view, filter local downloaded music!
+    if (state.currentView === 'downloads-view') {
+      renderDownloadedLibrary(query);
+      return;
+    }
+
     if (!query) {
       return showToast('Escribe el nombre de un artista, canción o pega un enlace de Spotify', true);
     }
@@ -399,6 +439,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnSearchPlaylist.addEventListener('click', handleSearch);
   inputPlaylistUrl.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') handleSearch();
+  });
+  inputPlaylistUrl.addEventListener('input', () => {
+    if (state.currentView === 'downloads-view') {
+      renderDownloadedLibrary(inputPlaylistUrl.value.trim());
+    }
   });
 
   async function pasteAndSearch() {
@@ -582,9 +627,32 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="media-card-title" title="${album.name}">${album.name}</div>
         <div class="media-card-desc">${album.artists} • ${album.total_tracks} pistas</div>
       `;
-      card.addEventListener('click', () => {
-        inputPlaylistUrl.value = album.spotify_url;
-        handleSearch();
+      card.addEventListener('click', async () => {
+        try {
+          showToast(`Cargando pistas del álbum "${album.name}"...`);
+          const res = await window.snapAPI.getAlbumTracks({
+            albumId: album.id,
+            albumName: album.name,
+            albumCover: album.cover_url
+          });
+          if (res.success && res.data) {
+            state.playlist = res.data;
+            state.selectedIds = new Set(res.data.tracks.map((t) => t.id));
+            catalogResultsContainer.style.display = 'none';
+            if (catalogBackNav) {
+              catalogBackNav.style.display = 'flex';
+              if (catalogBackQueryText) {
+                catalogBackQueryText.textContent = `Resultados para: "${state.lastSearchQuery || album.name}"`;
+              }
+            }
+            renderPlaylist(res.data);
+            showToast(`Álbum cargado: ${res.data.name} (${res.data.tracks.length} canciones)`);
+          } else {
+            showToast(res.error || 'No se pudieron cargar las canciones del álbum', true);
+          }
+        } catch (err) {
+          showToast(`Error al cargar álbum: ${err.message}`, true);
+        }
       });
       catalogAlbumsGrid.appendChild(card);
     });
@@ -1161,6 +1229,242 @@ document.addEventListener('DOMContentLoaded', async () => {
     await window.snapAPI.cancelAll();
     showToast('Todas las descargas han sido canceladas');
   });
+
+  // 10. Downloaded Offline Music Library
+  async function renderDownloadedLibrary(filterText = '') {
+    if (!downloadedTracksTbody) return;
+
+    try {
+      const res = await window.snapAPI.getDownloadedTracks();
+      if (!res.success) {
+        console.warn('Error fetching downloaded tracks:', res.error);
+        return;
+      }
+
+      state.downloadedTracks = res.tracks || [];
+      if (downloadedTracksCount) downloadedTracksCount.textContent = state.downloadedTracks.length;
+
+      let filtered = state.downloadedTracks;
+      if (filterText) {
+        const lower = filterText.toLowerCase();
+        filtered = filtered.filter(t =>
+          (t.name && t.name.toLowerCase().includes(lower)) ||
+          (t.artists && t.artists.toLowerCase().includes(lower)) ||
+          (t.format && t.format.toLowerCase().includes(lower))
+        );
+      }
+
+      downloadedTracksTbody.innerHTML = '';
+      if (filtered.length === 0) {
+        if (emptyDownloadedState) {
+          emptyDownloadedState.style.display = 'block';
+          const p = emptyDownloadedState.querySelector('p');
+          if (p) {
+            p.textContent = filterText
+              ? `No se encontraron canciones que coincidan con "${filterText}".`
+              : 'Aún no hay canciones descargadas en la carpeta seleccionada.';
+          }
+        }
+        return;
+      }
+
+      if (emptyDownloadedState) emptyDownloadedState.style.display = 'none';
+
+      filtered.forEach((track, idx) => {
+        const tr = document.createElement('tr');
+        tr.className = 'track-row';
+        const formatClass = (track.format || 'mp3').toLowerCase();
+        tr.innerHTML = `
+          <td class="col-num">${idx + 1}</td>
+          <td>
+            <button class="btn-play-row btn-play-local-track" data-id="${track.id}" title="Reproducir Canción">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            </button>
+          </td>
+          <td>
+            <div class="col-title">
+              <div class="brand-icon" style="width: 32px; height: 32px; border-radius: 4px; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+              </div>
+              <div class="track-info">
+                <span class="track-name" title="${track.name}">${track.name}</span>
+                <span class="track-artist" title="${track.artists}">${track.artists}</span>
+              </div>
+            </div>
+          </td>
+          <td><span class="badge-format ${formatClass}">${track.format}</span></td>
+          <td class="col-time">${track.size}</td>
+          <td style="text-align: right;">
+            <div style="display: flex; gap: 4px; justify-content: flex-end;">
+              <button class="btn-icon-subtle btn-reveal-file" title="Mostrar en carpeta">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>
+              </button>
+              <button class="btn-icon-subtle danger btn-delete-file" title="Eliminar archivo">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+              </button>
+            </div>
+          </td>
+        `;
+
+        const playBtn = tr.querySelector('.btn-play-local-track');
+        playBtn.addEventListener('click', () => playAudio(track, playBtn));
+
+        tr.querySelector('.btn-reveal-file').addEventListener('click', () => {
+          window.snapAPI.showItemInFolder(track.localPath);
+        });
+
+        tr.querySelector('.btn-delete-file').addEventListener('click', async () => {
+          if (confirm(`¿Deseas eliminar "${track.name}" del disco?`)) {
+            const delRes = await window.snapAPI.deleteDownloadedTrack(track.localPath);
+            if (delRes.success) {
+              showToast(`Eliminada: ${track.name}`);
+              renderDownloadedLibrary();
+            } else {
+              showToast('Error al eliminar archivo: ' + (delRes.error || ''), true);
+            }
+          }
+        });
+
+        downloadedTracksTbody.appendChild(tr);
+      });
+    } catch (e) {
+      console.warn('Error in renderDownloadedLibrary:', e);
+    }
+  }
+
+  if (btnRefreshDownloaded) {
+    btnRefreshDownloaded.addEventListener('click', () => {
+      showToast('Actualizando lista de música...');
+      renderDownloadedLibrary();
+    });
+  }
+
+  // 11. In-App Auto-Updater System
+  async function checkForUpdates(manual = false) {
+    try {
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = 'Buscando actualizaciones...';
+      const info = await window.snapAPI.checkForUpdates();
+      state.updateInfo = info;
+
+      if (settingsAppVersion && info.currentVersion) {
+        settingsAppVersion.textContent = `v${info.currentVersion}`;
+      }
+
+      if (info.hasUpdate) {
+        if (settingsUpdateStatus) {
+          settingsUpdateStatus.textContent = `¡Nueva versión v${info.latestVersion} disponible!`;
+          settingsUpdateStatus.style.color = '#1db954';
+        }
+
+        // Show topbar banner
+        if (topbarUpdateBanner) {
+          topbarUpdateBanner.style.display = 'block';
+          topbarUpdateBanner.innerHTML = `
+            <div class="update-notification-banner">
+              <span>🚀 ¡Nueva versión de SpotMusic disponible: v${info.latestVersion}!</span>
+              <button id="btn-banner-open-update">Actualizar Ahora</button>
+            </div>
+          `;
+          const bannerBtn = document.getElementById('btn-banner-open-update');
+          if (bannerBtn) {
+            bannerBtn.addEventListener('click', () => openUpdateModal(info));
+          }
+        }
+
+        if (manual) {
+          openUpdateModal(info);
+        }
+      } else {
+        if (settingsUpdateStatus) {
+          settingsUpdateStatus.textContent = `SpotMusic está actualizado a la última versión (v${info.currentVersion})`;
+          settingsUpdateStatus.style.color = 'var(--text-muted)';
+        }
+        if (manual) {
+          showToast(`SpotMusic está actualizado a la versión más reciente (v${info.currentVersion})`);
+        }
+      }
+    } catch (e) {
+      console.warn('Update check failed:', e);
+      if (settingsUpdateStatus) settingsUpdateStatus.textContent = 'Error al comprobar actualizaciones';
+      if (manual) showToast('No se pudo comprobar actualizaciones', true);
+    }
+  }
+
+  function openUpdateModal(info) {
+    if (!updateModal || !info) return;
+    if (updateModalVersion) updateModalVersion.textContent = `SpotMusic v${info.latestVersion}`;
+    if (updateModalNotes) updateModalNotes.textContent = info.releaseNotes || 'Mejoras de rendimiento y correcciones generales.';
+    if (updateProgressContainer) updateProgressContainer.style.display = 'none';
+    if (btnStartUpdate) {
+      btnStartUpdate.textContent = 'Descargar e Instalar';
+      btnStartUpdate.disabled = false;
+    }
+    updateModal.classList.add('open');
+  }
+
+  if (btnStartUpdate) {
+    btnStartUpdate.addEventListener('click', async () => {
+      if (!state.updateInfo || !state.updateInfo.downloadUrl) {
+        return showToast('Enlace de descarga no disponible en la release', true);
+      }
+
+      // If already downloaded and ready to install
+      if (state.updateDownloadedPath) {
+        showToast('Iniciando instalación...');
+        await window.snapAPI.installUpdate(state.updateDownloadedPath);
+        return;
+      }
+
+      btnStartUpdate.disabled = true;
+      if (updateProgressContainer) updateProgressContainer.style.display = 'block';
+      if (updateProgressFill) updateProgressFill.style.width = '0%';
+      if (updateProgressPercent) updateProgressPercent.textContent = '0%';
+      if (updateProgressLabel) updateProgressLabel.textContent = 'Iniciando descarga...';
+
+      const unlisten = window.snapAPI.onUpdateDownloadProgress((prog) => {
+        if (updateProgressFill) updateProgressFill.style.width = `${prog.percent}%`;
+        if (updateProgressPercent) updateProgressPercent.textContent = `${prog.percent}%`;
+        if (updateProgressLabel) {
+          updateProgressLabel.textContent = `Descargando: ${prog.mbDownloaded || 0} MB de ${prog.mbTotal || 0} MB`;
+        }
+      });
+
+      try {
+        const res = await window.snapAPI.downloadUpdate({
+          downloadUrl: state.updateInfo.downloadUrl,
+          fileName: state.updateInfo.fileName
+        });
+        unlisten();
+
+        if (res.success && res.filePath) {
+          state.updateDownloadedPath = res.filePath;
+          if (updateProgressLabel) updateProgressLabel.textContent = '¡Descarga completada!';
+          if (updateProgressFill) updateProgressFill.style.width = '100%';
+          if (updateProgressPercent) updateProgressPercent.textContent = '100%';
+          btnStartUpdate.disabled = false;
+          btnStartUpdate.textContent = 'Reiniciar e Instalar Ahora';
+          showToast('Actualización lista. Pulsa "Reiniciar e Instalar Ahora"');
+        } else {
+          throw new Error(res.error || 'Error en la descarga');
+        }
+      } catch (err) {
+        unlisten();
+        btnStartUpdate.disabled = false;
+        if (updateProgressLabel) updateProgressLabel.textContent = `Error: ${err.message}`;
+        showToast(`Error en la descarga: ${err.message}`, true);
+      }
+    });
+  }
+
+  if (btnCloseUpdateModal) {
+    btnCloseUpdateModal.addEventListener('click', () => updateModal.classList.remove('open'));
+  }
+  if (btnLaterUpdate) {
+    btnLaterUpdate.addEventListener('click', () => updateModal.classList.remove('open'));
+  }
+  if (btnCheckUpdates) {
+    btnCheckUpdates.addEventListener('click', () => checkForUpdates(true));
+  }
 
   // Start initialization
   await init();

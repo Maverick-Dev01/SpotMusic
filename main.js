@@ -1,9 +1,12 @@
-const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
 const path = require('path');
+const fs = require('fs');
+const { pathToFileURL } = require('url');
 const settingsService = require('./src/services/settings');
 const spotifyService = require('./src/services/spotify');
 const downloaderService = require('./src/services/downloader');
 const licenseService = require('./src/services/licenseService');
+const updaterService = require('./src/services/updater');
 
 let mainWindow = null;
 
@@ -50,6 +53,22 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(() => {
+    // Protocol handler for playing offline downloaded audio files safely
+    try {
+      protocol.handle('local-audio', (request) => {
+        try {
+          const raw = request.url.replace(/^local-audio:\/\//, '');
+          const decoded = decodeURIComponent(raw);
+          return net.fetch(pathToFileURL(decoded).toString());
+        } catch (err) {
+          console.error('Failed to handle local-audio protocol:', err);
+          return new Response('File not found', { status: 404 });
+        }
+      });
+    } catch (protErr) {
+      console.warn('Protocol registration warning:', protErr.message);
+    }
+
     createWindow();
 
     app.on('activate', () => {
@@ -151,11 +170,35 @@ ipcMain.handle('search-catalog', async (event, query) => {
   }
 });
 
+ipcMain.handle('get-album-tracks', async (event, { albumId, albumName, albumCover }) => {
+  try {
+    return await spotifyService.getAlbumTracks(albumId, albumName, albumCover);
+  } catch (err) {
+    console.error('Error in get-album-tracks:', err);
+    return {
+      success: false,
+      error: err.message || 'Error al obtener canciones del álbum'
+    };
+  }
+});
+
 const streamAudioCache = new Map();
 
 ipcMain.handle('get-track-audio', async (event, track) => {
   if (!track || !track.name) {
     return { success: false, error: 'Información de pista no válida' };
+  }
+
+  // 0. Check if track is a local offline downloaded file
+  if (track.isLocal && track.localPath) {
+    if (fs.existsSync(track.localPath)) {
+      return {
+        success: true,
+        url: `local-audio://${encodeURIComponent(track.localPath)}`,
+        source: 'local'
+      };
+    }
+    return { success: false, error: 'El archivo descargado no se encuentra en el disco' };
   }
 
   const cacheKey = `${track.name} - ${track.artists || ''}`.toLowerCase().trim();
@@ -200,6 +243,104 @@ ipcMain.handle('get-track-audio', async (event, track) => {
     success: false,
     error: 'No se pudo obtener el audio de preescucha para esta pista'
   };
+});
+
+// Downloaded Files & Library IPC Handlers
+ipcMain.handle('get-downloaded-tracks', async () => {
+  try {
+    const settings = settingsService.getSettings();
+    const downloadDir = settings.downloadDir;
+    if (!downloadDir || !fs.existsSync(downloadDir)) {
+      return { success: true, tracks: [] };
+    }
+
+    const audioExts = new Set(['.mp3', '.m4a', '.flac', '.opus', '.wav', '.ogg']);
+    const entries = fs.readdirSync(downloadDir, { withFileTypes: true });
+
+    const tracks = [];
+    for (const file of entries) {
+      if (!file.isFile()) continue;
+      const ext = path.extname(file.name).toLowerCase();
+      if (!audioExts.has(ext)) continue;
+
+      const fullPath = path.join(downloadDir, file.name);
+      const stat = fs.statSync(fullPath);
+      const nameWithoutExt = path.basename(file.name, ext);
+
+      // Parse "Artist - Title"
+      let artist = 'Descarga Local';
+      let title = nameWithoutExt;
+      if (nameWithoutExt.includes(' - ')) {
+        const parts = nameWithoutExt.split(' - ');
+        artist = parts[0].trim();
+        title = parts.slice(1).join(' - ').trim();
+      }
+
+      const sizeMb = (stat.size / (1024 * 1024)).toFixed(1) + ' MB';
+
+      tracks.push({
+        id: `local-${stat.ino || stat.mtimeMs}`,
+        name: title,
+        artists: artist,
+        album: 'Descargas Locales',
+        format: ext.replace('.', '').toUpperCase(),
+        size: sizeMb,
+        mtime: stat.mtimeMs,
+        localPath: fullPath,
+        isLocal: true,
+        duration_str: '--:--'
+      });
+    }
+
+    tracks.sort((a, b) => b.mtime - a.mtime);
+    return { success: true, tracks };
+  } catch (err) {
+    console.error('Error in get-downloaded-tracks:', err);
+    return { success: false, error: err.message, tracks: [] };
+  }
+});
+
+ipcMain.handle('show-item-in-folder', async (event, fullPath) => {
+  if (fullPath && fs.existsSync(fullPath)) {
+    shell.showItemInFolder(fullPath);
+    return { success: true };
+  }
+  return { success: false, error: 'Archivo no encontrado' };
+});
+
+ipcMain.handle('delete-downloaded-track', async (event, fullPath) => {
+  try {
+    if (fullPath && fs.existsSync(fullPath)) {
+      fs.unlinkSync(fullPath);
+      return { success: true };
+    }
+    return { success: false, error: 'Archivo no encontrado' };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+// Auto-Updater IPC Handlers
+ipcMain.handle('check-for-updates', async (event, customUrl) => {
+  return await updaterService.checkForUpdates(customUrl);
+});
+
+ipcMain.handle('download-update', async (event, { downloadUrl, fileName }) => {
+  try {
+    const targetPath = path.join(app.getPath('temp'), fileName || 'SpotMusic_Update');
+    await updaterService.downloadFileWithProgress(downloadUrl, targetPath, (progress) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('update-download-progress', progress);
+      }
+    });
+    return { success: true, filePath: targetPath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('install-update', async (event, filePath) => {
+  return await updaterService.installDownloadedUpdate(filePath);
 });
 
 ipcMain.handle('start-batch-download', async (event, { tracks, format, concurrency, downloadDir }) => {
