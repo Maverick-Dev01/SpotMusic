@@ -123,11 +123,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const btnCloseSettings = document.getElementById('btn-close-settings');
   const btnCancelSettings = document.getElementById('btn-cancel-settings');
   const btnSaveSettings = document.getElementById('btn-save-settings');
-  const settingClientId = document.getElementById('setting-client-id');
-  const settingClientSecret = document.getElementById('setting-client-secret');
-  const btnToggleSecret = document.getElementById('btn-toggle-secret');
-  const btnTestApi = document.getElementById('btn-test-api');
-  const testApiStatus = document.getElementById('test-api-status');
   const settingDownloadDir = document.getElementById('setting-download-dir');
   const btnBrowseFolder = document.getElementById('btn-browse-folder');
   const settingDefaultFormat = document.getElementById('setting-default-format');
@@ -135,7 +130,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   const sysFfmpegStatus = document.getElementById('sys-ffmpeg-status');
   const statusEngineDot = document.getElementById('status-engine-dot');
   const statusEngineText = document.getElementById('status-engine-text');
-  const linkSpotifyDash = document.getElementById('link-spotify-dash');
 
   // DOM Elements - License Modal
   const licenseModal = document.getElementById('license-modal');
@@ -217,8 +211,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
 
       state.settings = await window.snapAPI.getSettings();
-      settingClientId.value = state.settings.spotifyClientId || '';
-      settingClientSecret.value = state.settings.spotifyClientSecret || '';
       settingDownloadDir.value = state.settings.downloadDir || '';
       settingDefaultFormat.value = state.settings.defaultFormat || 'mp3-320';
       selectFormat.value = state.settings.defaultFormat || 'mp3-320';
@@ -285,16 +277,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   btnCloseLicense.addEventListener('click', () => licenseModal.classList.remove('open'));
   btnCancelLicense.addEventListener('click', () => licenseModal.classList.remove('open'));
 
-  btnToggleSecret.addEventListener('click', () => {
-    if (settingClientSecret.type === 'password') {
-      settingClientSecret.type = 'text';
-      btnToggleSecret.textContent = 'Ocultar';
-    } else {
-      settingClientSecret.type = 'password';
-      btnToggleSecret.textContent = 'Mostrar';
-    }
-  });
-
   btnBrowseFolder.addEventListener('click', async () => {
     const selected = await window.snapAPI.selectFolder();
     if (selected) settingDownloadDir.value = selected;
@@ -332,35 +314,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   }
 
-  linkSpotifyDash.addEventListener('click', (e) => {
-    e.preventDefault();
-    window.snapAPI.openFolder('https://developer.spotify.com/dashboard');
-  });
-
-  btnTestApi.addEventListener('click', async () => {
-    const id = settingClientId.value.trim();
-    const secret = settingClientSecret.value.trim();
-    if (!id || !secret) {
-      testApiStatus.textContent = 'Ingresa Client ID y Secret';
-      testApiStatus.style.color = '#e91429';
-      return;
-    }
-    testApiStatus.textContent = 'Probando conexión...';
-    testApiStatus.style.color = '#ffa42b';
-    const res = await window.snapAPI.testSpotifyCredentials(id, secret);
-    if (res.success) {
-      testApiStatus.textContent = '¡Conexión exitosa! ✓';
-      testApiStatus.style.color = '#1db954';
-    } else {
-      testApiStatus.textContent = `Error: ${res.error}`;
-      testApiStatus.style.color = '#e91429';
-    }
-  });
-
   btnSaveSettings.addEventListener('click', async () => {
     const updated = {
-      spotifyClientId: settingClientId.value.trim(),
-      spotifyClientSecret: settingClientSecret.value.trim(),
+      ...state.settings,
       downloadDir: settingDownloadDir.value.trim(),
       defaultFormat: settingDefaultFormat.value
     };

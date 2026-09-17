@@ -123,25 +123,27 @@ class LicenseService {
       expiresAt: payload.expiresAt,
       isPermanent: payload.expiresAt === -1,
       remainingDays: remainingDays,
-      issuedAt: payload.issuedAt
+      issuedAt: payload.issuedAt,
+      machineId: currentMachineId
     };
   }
 
   saveLicense(token) {
     const check = this.verifyToken(token);
     if (!check.valid) {
-      return check;
+      return { ...check, machineId: this.getMachineId() };
     }
 
     try {
       fs.writeFileSync(this.licenseFile, JSON.stringify({ token, savedAt: Date.now() }, null, 2), 'utf8');
-      return { ...check, success: true };
+      return { ...check, machineId: this.getMachineId(), success: true };
     } catch (err) {
-      return { valid: false, error: 'Error al guardar la licencia: ' + err.message };
+      return { valid: false, machineId: this.getMachineId(), error: 'Error al guardar la licencia: ' + err.message };
     }
   }
 
   getCurrentLicense() {
+    const machineId = this.getMachineId();
     try {
       if (fs.existsSync(this.licenseFile)) {
         const data = JSON.parse(fs.readFileSync(this.licenseFile, 'utf8'));
@@ -150,7 +152,8 @@ class LicenseService {
           return {
             ...status,
             token: data.token,
-            hasLicense: true
+            hasLicense: true,
+            machineId
           };
         }
       }
@@ -161,7 +164,7 @@ class LicenseService {
     return {
       valid: false,
       hasLicense: false,
-      machineId: this.getMachineId()
+      machineId
     };
   }
 

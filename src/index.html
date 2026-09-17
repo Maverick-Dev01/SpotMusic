@@ -57,7 +57,7 @@
             <circle cx="12" cy="12" r="3"></circle>
             <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
           </svg>
-          <span>Ajustes & API</span>
+          <span>Ajustes</span>
         </li>
       </ul>
 
@@ -463,7 +463,7 @@
   <div class="modal-overlay" id="settings-modal">
     <div class="modal-content">
       <div class="modal-header">
-        <h3 class="modal-title">Ajustes & Configuración de API</h3>
+        <h3 class="modal-title">Ajustes de la Aplicación</h3>
         <button class="modal-close" id="btn-close-settings">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="18" y1="6" x2="6" y2="18"></line>
@@ -472,35 +472,6 @@
         </button>
       </div>
       <div class="modal-body">
-        <div class="info-box">
-          SnapMusic puede leer playlists públicas directamente, pero para playlists grandes y sin límites de consulta, recomendamos configurar tus credenciales oficiales gratuitas de desarrollador de Spotify.
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Spotify Client ID:</label>
-          <input type="text" class="form-input" id="setting-client-id" placeholder="Pega tu Client ID aquí..." />
-        </div>
-
-        <div class="form-group">
-          <label class="form-label">Spotify Client Secret:</label>
-          <div class="input-with-button">
-            <input type="password" class="form-input" id="setting-client-secret" placeholder="Pega tu Client Secret..." />
-            <button class="btn btn-secondary btn-sm" id="btn-toggle-secret">Mostrar</button>
-          </div>
-          <div class="form-hint">
-            Obtén tus credenciales gratis en <a href="#" id="link-spotify-dash">developer.spotify.com/dashboard</a> (Crea una App gratuita de tipo Web API).
-          </div>
-        </div>
-
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <button class="btn btn-secondary btn-sm" id="btn-test-api">
-            <span>Probar Conexión de API</span>
-          </button>
-          <span id="test-api-status" style="font-size: 12px;"></span>
-        </div>
-
-        <hr style="border: none; border-top: 1px solid rgba(255, 255, 255, 0.08);" />
-
         <div class="form-group">
           <label class="form-label">Carpeta de Descarga:</label>
           <div class="input-with-button">

@@ -11,25 +11,66 @@ class DownloaderService {
     this.isCancelled = false;
     this.onProgressCallback = null;
 
-    this.ytDlpPath = this.resolveExecutable('yt-dlp', [
-      '/opt/homebrew/bin/yt-dlp',
-      '/usr/local/bin/yt-dlp',
-      path.join(process.env.HOME || '', '.local/bin/yt-dlp')
-    ]);
+    this.ytDlpPath = this.resolveExecutable('yt-dlp');
+    this.ffmpegPath = this.resolveExecutable('ffmpeg');
+  }
 
-    this.ffmpegPath = this.resolveExecutable('ffmpeg', [
-      '/opt/homebrew/bin/ffmpeg',
-      '/usr/local/bin/ffmpeg'
-    ]);
+  getSearchPaths(name) {
+    const isWin = process.platform === 'win32';
+    const binaryName = isWin && !name.endsWith('.exe') ? `${name}.exe` : name;
+    const platformFolder = isWin ? 'win' : 'mac';
+    const paths = [];
+
+    // 1. Packaged electron app resources path (process.resourcesPath/bin)
+    if (process.resourcesPath) {
+      paths.push(path.join(process.resourcesPath, 'bin', binaryName));
+      paths.push(path.join(process.resourcesPath, binaryName));
+    }
+
+    // 2. Dev environment (bin/<platform>/ or bin/)
+    paths.push(path.join(__dirname, '..', '..', 'bin', platformFolder, binaryName));
+    paths.push(path.join(__dirname, '..', '..', 'bin', binaryName));
+
+    // 3. User data directory if dynamically downloaded
+    try {
+      const { app } = require('electron');
+      if (app && app.getPath) {
+        paths.push(path.join(app.getPath('userData'), 'bin', binaryName));
+      }
+    } catch (e) {}
+
+    // 4. Standard system paths
+    if (isWin) {
+      const localAppData = process.env.LOCALAPPDATA || '';
+      const programFiles = process.env.ProgramFiles || 'C:\\Program Files';
+      paths.push(path.join(localAppData, 'Programs', 'yt-dlp', binaryName));
+      paths.push(path.join(programFiles, 'yt-dlp', binaryName));
+      paths.push(path.join(programFiles, 'ffmpeg', 'bin', binaryName));
+      paths.push(`C:\\yt-dlp\\${binaryName}`);
+      paths.push(`C:\\ffmpeg\\bin\\${binaryName}`);
+    } else {
+      paths.push('/opt/homebrew/bin/' + binaryName);
+      paths.push('/usr/local/bin/' + binaryName);
+      paths.push(path.join(process.env.HOME || '', '.local/bin', binaryName));
+    }
+
+    return paths;
   }
 
   resolveExecutable(name, customPaths = []) {
     const isWin = process.platform === 'win32';
     const binaryName = isWin && !name.endsWith('.exe') ? `${name}.exe` : name;
+    const allPaths = [...this.getSearchPaths(name), ...customPaths];
 
-    for (const p of customPaths) {
-      if (fs.existsSync(p)) return p;
-      if (isWin && !p.endsWith('.exe') && fs.existsSync(`${p}.exe`)) return `${p}.exe`;
+    for (const p of allPaths) {
+      if (p && fs.existsSync(p)) {
+        try {
+          fs.accessSync(p, fs.constants.X_OK);
+          return p;
+        } catch (e) {
+          if (isWin || fs.existsSync(p)) return p;
+        }
+      }
     }
 
     try {
@@ -43,13 +84,8 @@ class DownloaderService {
   }
 
   checkDependencies() {
-    // Re-check in case paths changed
-    if (!this.ytDlpPath || !fs.existsSync(this.ytDlpPath)) {
-      this.ytDlpPath = this.resolveExecutable('yt-dlp', ['/opt/homebrew/bin/yt-dlp', '/usr/local/bin/yt-dlp']);
-    }
-    if (!this.ffmpegPath || !fs.existsSync(this.ffmpegPath)) {
-      this.ffmpegPath = this.resolveExecutable('ffmpeg', ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg']);
-    }
+    this.ytDlpPath = this.resolveExecutable('yt-dlp');
+    this.ffmpegPath = this.resolveExecutable('ffmpeg');
 
     return {
       ytDlp: {

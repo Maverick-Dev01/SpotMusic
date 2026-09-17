@@ -4,6 +4,7 @@ node_modules/
 # Production builds
 dist/
 build/
+bin/
 
 # Operating System Files
 .DS_Store
