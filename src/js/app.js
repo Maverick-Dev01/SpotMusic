@@ -1573,8 +1573,15 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       // If already downloaded and ready to install
       if (state.updateDownloadedPath) {
-        showToast('Iniciando instalación...');
-        await window.snapAPI.installUpdate(state.updateDownloadedPath);
+        showToast('Iniciando instalación y reinicio...');
+        btnStartUpdate.disabled = true;
+        btnStartUpdate.textContent = 'Instalando...';
+        const res = await window.snapAPI.installUpdate(state.updateDownloadedPath);
+        if (res && !res.success) {
+          showToast(`Error al instalar: ${res.error || 'Fallo desconocido'}`, true);
+          btnStartUpdate.disabled = false;
+          btnStartUpdate.textContent = 'Reiniciar e Instalar Ahora';
+        }
         return;
       }
 

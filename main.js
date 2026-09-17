@@ -561,7 +561,13 @@ ipcMain.handle('check-for-updates', async (event, customUrl) => {
 
 ipcMain.handle('download-update', async (event, { downloadUrl, fileName }) => {
   try {
-    const targetPath = path.join(app.getPath('temp'), fileName || 'SpotMusic_Update');
+    if (!downloadUrl || typeof downloadUrl !== 'string') {
+      return { success: false, error: 'Enlace de descarga no disponible o inválido.' };
+    }
+    if (!fileName || typeof fileName !== 'string' || !fileName.includes('.')) {
+      return { success: false, error: 'Nombre o extensión de archivo de actualización inválido.' };
+    }
+    const targetPath = path.join(app.getPath('temp'), fileName);
     await updaterService.downloadFileWithProgress(downloadUrl, targetPath, (progress) => {
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('update-download-progress', progress);
@@ -574,7 +580,11 @@ ipcMain.handle('download-update', async (event, { downloadUrl, fileName }) => {
 });
 
 ipcMain.handle('install-update', async (event, filePath) => {
-  return await updaterService.installDownloadedUpdate(filePath);
+  try {
+    return await updaterService.installDownloadedUpdate(filePath);
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 ipcMain.handle('start-batch-download', async (event, { tracks, format, concurrency, downloadDir }) => {
