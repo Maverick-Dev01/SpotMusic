@@ -10,7 +10,7 @@ contextBridge.exposeInMainWorld('snapAPI', {
   fetchPlaylist: (url) => ipcRenderer.invoke('fetch-playlist', url),
   searchCatalog: (query) => ipcRenderer.invoke('search-catalog', query),
   getTrackAudio: (track) => ipcRenderer.invoke('get-track-audio', track),
-  getLicenseStatus: () => ipcRenderer.invoke('get-license-status'),
+  getLicenseStatus: (forceOnline = false) => ipcRenderer.invoke('get-license-status', forceOnline),
   activateLicense: (token) => ipcRenderer.invoke('activate-license', token),
   removeLicense: () => ipcRenderer.invoke('remove-license'),
   testSpotifyCredentials: (clientId, clientSecret) =>
@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('snapAPI', {
     const listener = (event, data) => callback(data);
     ipcRenderer.on('license-revoked', listener);
     return () => ipcRenderer.removeListener('license-revoked', listener);
+  },
+  onLicenseStatusChanged: (callback) => {
+    const listener = (event, data) => callback(data);
+    ipcRenderer.on('license-status-changed', listener);
+    return () => ipcRenderer.removeListener('license-status-changed', listener);
   },
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),

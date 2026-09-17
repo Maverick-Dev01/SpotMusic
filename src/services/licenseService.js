@@ -284,18 +284,6 @@ class LicenseService {
       if (fs.existsSync(this.licenseFile)) {
         const data = JSON.parse(fs.readFileSync(this.licenseFile, 'utf8'));
         if (data && data.token) {
-          // If already marked revoked locally
-          if (data.revoked) {
-            return {
-              valid: false,
-              revoked: true,
-              hasLicense: true,
-              token: data.token,
-              machineId,
-              error: data.revocationReason || 'Esta licencia fue REVOCADA por el administrador en KeyForge Pro.'
-            };
-          }
-
           const localStatus = this.verifyToken(data.token);
           if (!localStatus.valid) {
             return {
@@ -306,9 +294,9 @@ class LicenseService {
             };
           }
 
-          // Check online if forced or cache older than 3 minutes
+          // Check online if forced, or cache older than 15 seconds, or if currently marked revoked
           const now = Date.now();
-          const shouldCheckOnline = forceOnline || (now - this.lastOnlineCheck > 180000);
+          const shouldCheckOnline = forceOnline || data.revoked || (now - this.lastOnlineCheck > 15000);
 
           if (shouldCheckOnline) {
             const cloudCheck = await this.checkOnlineStatus(data.token, machineId);
@@ -350,7 +338,25 @@ class LicenseService {
               };
             }
 
-            if (cloudCheck.onlineVerified) {
+            if (cloudCheck.onlineVerified || cloudCheck.valid) {
+              // LICENSE IS ACTIVE / REACTIVATED! Clear any revoked flags
+              if (data.revoked) {
+                delete data.revoked;
+                delete data.revokedAt;
+                delete data.revocationReason;
+                try {
+                  fs.writeFileSync(
+                    this.licenseFile,
+                    JSON.stringify({
+                      token: data.token,
+                      savedAt: data.savedAt || now,
+                      lastOnlineCheck: now
+                    }, null, 2),
+                    'utf8'
+                  );
+                } catch (e) {}
+              }
+
               return {
                 ...localStatus,
                 token: data.token,
@@ -359,6 +365,18 @@ class LicenseService {
                 machineId
               };
             }
+          }
+
+          // If offline or cache still fresh and local file is marked revoked
+          if (data.revoked) {
+            return {
+              valid: false,
+              revoked: true,
+              hasLicense: true,
+              token: data.token,
+              machineId,
+              error: data.revocationReason || 'Esta licencia fue REVOCADA por el administrador en KeyForge Pro.'
+            };
           }
 
           return {

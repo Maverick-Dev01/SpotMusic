@@ -9,6 +9,8 @@ const spotifyService = require('./src/services/spotify');
 const downloaderService = require('./src/services/downloader');
 const licenseService = require('./src/services/licenseService');
 const updaterService = require('./src/services/updater');
+const streamResolver = require('./src/services/streamResolver');
+streamResolver.setDownloaderService(downloaderService);
 
 // Autoplay policy: allow audio playback without explicit direct user gesture tick
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
@@ -175,9 +177,37 @@ function createWindow() {
     console.log(`[Renderer] ${message}`);
   });
 
+  mainWindow.on('focus', () => {
+    checkAndBroadcastLicense(true);
+  });
+
   mainWindow.on('closed', () => {
     mainWindow = null;
   });
+}
+
+let lastBroadcastValid = null;
+let lastBroadcastRevoked = null;
+
+async function checkAndBroadcastLicense(force = false) {
+  try {
+    const license = await licenseService.getCurrentLicense(force);
+    const valid = !!license.valid;
+    const revoked = !!license.revoked;
+    if (valid !== lastBroadcastValid || revoked !== lastBroadcastRevoked) {
+      lastBroadcastValid = valid;
+      lastBroadcastRevoked = revoked;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('license-status-changed', license);
+        if (revoked) {
+          mainWindow.webContents.send('license-revoked', license);
+        }
+      }
+    }
+    return license;
+  } catch (e) {
+    return null;
+  }
 }
 
 // Ensure single instance
@@ -201,15 +231,10 @@ if (!gotTheLock) {
 
     createWindow();
 
-    // Heartbeat check every 2.5 minutes for cloud license revocation
-    setInterval(async () => {
-      try {
-        const license = await licenseService.getCurrentLicense(true);
-        if (license && license.revoked && mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send('license-revoked', license);
-        }
-      } catch (e) {}
-    }, 150000);
+    // Fast heartbeat check every 15 seconds for real-time license revocation & reactivation
+    setInterval(() => {
+      checkAndBroadcastLicense(false);
+    }, 15000);
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -286,8 +311,11 @@ ipcMain.handle('fetch-playlist', async (event, url) => {
   }
 });
 
-ipcMain.handle('get-license-status', async () => {
-  return await licenseService.getCurrentLicense();
+ipcMain.handle('get-license-status', async (event, forceOnline = false) => {
+  const license = await licenseService.getCurrentLicense(forceOnline);
+  lastBroadcastValid = !!license.valid;
+  lastBroadcastRevoked = !!license.revoked;
+  return license;
 });
 
 ipcMain.handle('activate-license', async (event, token) => {
@@ -362,13 +390,30 @@ ipcMain.handle('get-track-audio', async (event, track) => {
     return { success: true, url: streamAudioCache.get(cacheKey), source: 'cache' };
   }
 
-  // 1. Check if track already has a valid preview_url from Spotify
-  if (track.preview_url && typeof track.preview_url === 'string' && track.preview_url.startsWith('http')) {
-    streamAudioCache.set(cacheKey, track.preview_url);
-    return { success: true, url: track.preview_url, source: 'spotify' };
+  // 1. Resolve full song via StreamResolver (JioSaavn 320kbps -> YouTube Direct Stream -> SoundCloud)
+  try {
+    const fallbackPreview = (track.preview_url && typeof track.preview_url === 'string' && track.preview_url.startsWith('http'))
+      ? track.preview_url
+      : null;
+    const durationMs = track.duration_ms || (track.duration ? track.duration * 1000 : 0);
+    const resolved = await streamResolver.resolveFullAudio(track.name, track.artists, durationMs, fallbackPreview);
+    if (resolved && resolved.audioUrl) {
+      streamAudioCache.set(cacheKey, resolved.audioUrl);
+      return {
+        success: true,
+        url: resolved.audioUrl,
+        durationMs: resolved.durationMs,
+        durationStr: resolved.durationStr,
+        format: resolved.format,
+        source: resolved.source,
+        coverUrl: resolved.coverUrl
+      };
+    }
+  } catch (resErr) {
+    console.warn('[StreamResolver error]', resErr.message);
   }
 
-  // 2. Query iTunes Preview Search API with title cleaning and fallback cascade
+  // 2. Query iTunes Preview Search API as fallback
   try {
     const cleanTitle = cleanTitleForSearch(track.name);
     const mainArtist = (track.artists || '').split(/[,&/]/)[0].trim();
@@ -388,7 +433,7 @@ ipcMain.handle('get-track-audio', async (event, track) => {
             for (const item of data.results) {
               if (item.previewUrl) {
                 streamAudioCache.set(cacheKey, item.previewUrl);
-                return { success: true, url: item.previewUrl, source: 'itunes' };
+                return { success: true, url: item.previewUrl, source: 'itunes', durationMs: 30000, durationStr: '0:30' };
               }
             }
           }
@@ -401,22 +446,15 @@ ipcMain.handle('get-track-audio', async (event, track) => {
     console.warn('[iTunes preview lookup failed]', err.message);
   }
 
-  // 3. Fallback to yt-dlp direct audio stream extraction
-  try {
-    const cleanTitle = cleanTitleForSearch(track.name);
-    const mainArtist = (track.artists || '').split(/[,&/]/)[0].trim();
-    const ytStreamUrl = await downloaderService.getAudioStreamUrl(cleanTitle || track.name, mainArtist || track.artists || '');
-    if (ytStreamUrl) {
-      streamAudioCache.set(cacheKey, ytStreamUrl);
-      return { success: true, url: ytStreamUrl, source: 'youtube' };
-    }
-  } catch (err) {
-    console.warn('[yt-dlp stream extraction failed]', err.message);
+  // 3. Fallback to Spotify preview if present
+  if (track.preview_url && typeof track.preview_url === 'string' && track.preview_url.startsWith('http')) {
+    streamAudioCache.set(cacheKey, track.preview_url);
+    return { success: true, url: track.preview_url, source: 'spotify', durationMs: 30000, durationStr: '0:30' };
   }
 
   return {
     success: false,
-    error: 'No se pudo obtener el audio de preescucha para esta pista'
+    error: 'No se pudo obtener el stream de audio para esta pista'
   };
 });
 

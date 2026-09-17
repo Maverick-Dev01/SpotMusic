@@ -193,9 +193,9 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 1. Initialize License
-  async function refreshLicenseUI() {
+  async function refreshLicenseUI(forceOnline = false) {
     try {
-      const lic = await window.snapAPI.getLicenseStatus();
+      const lic = await window.snapAPI.getLicenseStatus(forceOnline);
       state.license = lic;
       licenseMachineId.value = lic.machineId || 'DESCONOCIDO';
 
@@ -219,7 +219,22 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
-  // Real-time revocation listener from background heartbeat
+  // Real-time status change listener (both revocation & reactivation)
+  if (window.snapAPI && window.snapAPI.onLicenseStatusChanged) {
+    window.snapAPI.onLicenseStatusChanged((lic) => {
+      const wasValid = state.license && state.license.valid;
+      refreshLicenseUI();
+      if (lic.valid && !wasValid) {
+        showToast('✓ ¡Licencia reactivada correctamente en KeyForge Pro!');
+        licenseModal.classList.remove('open');
+      } else if (!lic.valid && wasValid) {
+        showToast(lic.error || '⚠️ Tu licencia ha sido REVOCADA por el administrador en KeyForge Pro.', true);
+        licenseModal.classList.add('open');
+      }
+    });
+  }
+
+  // Real-time revocation listener fallback
   if (window.snapAPI && window.snapAPI.onLicenseRevoked) {
     window.snapAPI.onLicenseRevoked((lic) => {
       refreshLicenseUI();
@@ -227,6 +242,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       licenseModal.classList.add('open');
     });
   }
+
+  // Refresh immediately when window gains focus (e.g. switching back from browser KeyForge)
+  window.addEventListener('focus', () => {
+    refreshLicenseUI(true);
+  });
 
   btnCopyMachineId.addEventListener('click', () => {
     navigator.clipboard.writeText(licenseMachineId.value);
@@ -1007,8 +1027,15 @@ document.addEventListener('DOMContentLoaded', async () => {
       await audio.play();
 
       playerTrackArtist.textContent = track.artists;
+      if (res.durationStr && playerTimeTotal) {
+        playerTimeTotal.textContent = res.durationStr;
+      }
       if (track.cover_url) {
         playerTrackCover.src = track.cover_url;
+        playerTrackCover.style.display = 'block';
+      } else if (res.coverUrl) {
+        track.cover_url = res.coverUrl;
+        playerTrackCover.src = res.coverUrl;
         playerTrackCover.style.display = 'block';
       } else if (track.isLocal && window.snapAPI.resolveCoverArt) {
         window.snapAPI.resolveCoverArt({ artist: track.artists, title: track.name }).then(artRes => {
@@ -1169,8 +1196,21 @@ document.addEventListener('DOMContentLoaded', async () => {
       downloadDir
     });
 
-    if (!res.success) {
-      showToast(res.error || 'Error al iniciar descarga', true);
+    if (!res || !res.success) {
+      const errMsg = (res && res.error) ? res.error : 'Error al iniciar descarga';
+      tracksToDownload.forEach(t => {
+        const item = state.downloads.get(t.id);
+        if (item) {
+          item.status = 'error';
+          item.error = errMsg;
+          item.message = 'Error';
+          const cell = document.getElementById(`status-cell-${t.id}`);
+          if (cell) cell.innerHTML = getTrackStatusBadgeHTML(item);
+        }
+      });
+      updateDownloadStats();
+      renderDownloadsTable();
+      showToast(errMsg, true);
     } else {
       switchView('downloads-view');
     }

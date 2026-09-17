@@ -65,6 +65,9 @@ class DownloaderService {
     for (const p of allPaths) {
       if (p && fs.existsSync(p)) {
         try {
+          if (process.platform === 'darwin') {
+            try { execSync(`chmod +x "${p}" 2>/dev/null; xattr -d com.apple.quarantine "${p}" 2>/dev/null || true`); } catch (e) {}
+          }
           fs.accessSync(p, fs.constants.X_OK);
           return p;
         } catch (e) {
@@ -195,6 +198,7 @@ class DownloaderService {
       const searchQuery = `ytsearch1:${track.name} ${track.artists} audio`;
 
       const args = [
+        '--extractor-args', 'youtube:player_client=android,web',
         searchQuery,
         '-x',
         '--audio-format', ext,
@@ -213,6 +217,7 @@ class DownloaderService {
 
       const ytExecutable = this.ytDlpPath || 'yt-dlp';
       let child;
+      let downloadTimeout = null;
 
       try {
         child = spawn(ytExecutable, args, {
@@ -222,7 +227,22 @@ class DownloaderService {
           }
         });
         this.activeProcesses.set(trackId, child);
+
+        // Safety timeout: 4 minutes max per track
+        downloadTimeout = setTimeout(() => {
+          if (this.activeProcesses.has(trackId)) {
+            try { child.kill('SIGKILL'); } catch (e) {}
+            this.activeProcesses.delete(trackId);
+            this.notify(trackId, {
+              status: 'error',
+              percent: 0,
+              error: 'Tiempo de espera agotado al descargar la pista (timeout)'
+            });
+            resolve(false);
+          }
+        }, 240000);
       } catch (err) {
+        if (downloadTimeout) clearTimeout(downloadTimeout);
         this.notify(trackId, {
           status: 'error',
           percent: 0,
@@ -277,6 +297,7 @@ class DownloaderService {
       });
 
       child.on('close', (code) => {
+        if (downloadTimeout) clearTimeout(downloadTimeout);
         this.activeProcesses.delete(trackId);
         if (code === 0) {
           this.notify(trackId, {
@@ -307,6 +328,7 @@ class DownloaderService {
       });
 
       child.on('error', (err) => {
+        if (downloadTimeout) clearTimeout(downloadTimeout);
         this.activeProcesses.delete(trackId);
         this.notify(trackId, {
           status: 'error',
@@ -382,11 +404,13 @@ class DownloaderService {
     const query = `ytsearch1:${title} ${artist} audio`;
     return new Promise((resolve) => {
       const args = [
-        query,
+        '--no-warnings',
+        '--no-playlist',
+        '--js-runtimes', 'node',
+        '--extractor-args', 'youtube:player_client=android,web',
         '-g',
         '-f', '140/bestaudio/best',
-        '--no-playlist',
-        '--no-warnings'
+        query
       ];
 
       let child;
@@ -416,7 +440,7 @@ class DownloaderService {
       setTimeout(() => {
         try { child.kill('SIGTERM'); } catch (e) {}
         resolve(null);
-      }, 9000);
+      }, 20000);
     });
   }
 }
