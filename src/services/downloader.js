@@ -282,7 +282,8 @@ class DownloaderService {
           this.notify(trackId, {
             status: 'completed',
             percent: 100,
-            message: '¡Descarga completada!'
+            message: '¡Descarga completada!',
+            track
           });
           resolve(true);
         } else {

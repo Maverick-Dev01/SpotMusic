@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld('snapAPI', {
   checkDependencies: () => ipcRenderer.invoke('check-dependencies'),
   getAlbumTracks: (params) => ipcRenderer.invoke('get-album-tracks', params),
   getDownloadedTracks: () => ipcRenderer.invoke('get-downloaded-tracks'),
+  resolveCoverArt: (params) => ipcRenderer.invoke('resolve-cover-art', params),
   showItemInFolder: (filePath) => ipcRenderer.invoke('show-item-in-folder', filePath),
   deleteDownloadedTrack: (filePath) => ipcRenderer.invoke('delete-downloaded-track', filePath),
   checkForUpdates: (customUrl) => ipcRenderer.invoke('check-for-updates', customUrl),

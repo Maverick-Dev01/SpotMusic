@@ -1,6 +1,6 @@
 {
   "name": "spotmusic",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "SpotMusic - Spotify Playlist, Album & Track Downloader with Audio Preview and Licensing",
   "main": "main.js",
   "repository": {

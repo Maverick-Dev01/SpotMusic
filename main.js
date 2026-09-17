@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const { pathToFileURL } = require('url');
 const settingsService = require('./src/services/settings');
 const spotifyService = require('./src/services/spotify');
@@ -8,9 +9,53 @@ const downloaderService = require('./src/services/downloader');
 const licenseService = require('./src/services/licenseService');
 const updaterService = require('./src/services/updater');
 
+// Register local-audio scheme as privileged for seamless offline audio streaming
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-audio',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      bypassCSP: true
+    }
+  }
+]);
+
 let mainWindow = null;
 
 const isMac = process.platform === 'darwin';
+
+// Downloaded Track Metadata Registry (Cover Art & Album persistence)
+function getMetadataFilePath() {
+  const base = (app && typeof app.getPath === 'function')
+    ? app.getPath('userData')
+    : path.join(os.homedir(), '.snapmusic');
+  if (!fs.existsSync(base)) {
+    try { fs.mkdirSync(base, { recursive: true }); } catch (e) {}
+  }
+  return path.join(base, 'downloaded-metadata.json');
+}
+
+function getDownloadedMetadataMap() {
+  try {
+    const metaFile = getMetadataFilePath();
+    if (fs.existsSync(metaFile)) {
+      return JSON.parse(fs.readFileSync(metaFile, 'utf8'));
+    }
+  } catch (e) {}
+  return {};
+}
+
+function saveDownloadedMetadata(key, meta) {
+  try {
+    const metaFile = getMetadataFilePath();
+    const map = getDownloadedMetadataMap();
+    map[key.toLowerCase()] = meta;
+    fs.writeFileSync(metaFile, JSON.stringify(map, null, 2), 'utf8');
+  } catch (e) {}
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -57,9 +102,11 @@ if (!gotTheLock) {
     try {
       protocol.handle('local-audio', (request) => {
         try {
-          const raw = request.url.replace(/^local-audio:\/\//, '');
-          const decoded = decodeURIComponent(raw);
-          return net.fetch(pathToFileURL(decoded).toString());
+          let fileUrl = request.url.replace(/^local-audio:/, 'file:');
+          if (fileUrl.startsWith('file://') && !fileUrl.startsWith('file:///')) {
+            fileUrl = fileUrl.replace('file://', 'file:///');
+          }
+          return net.fetch(fileUrl);
         } catch (err) {
           console.error('Failed to handle local-audio protocol:', err);
           return new Response('File not found', { status: 404 });
@@ -204,7 +251,7 @@ ipcMain.handle('get-track-audio', async (event, track) => {
     if (fs.existsSync(track.localPath)) {
       return {
         success: true,
-        url: `local-audio://${encodeURIComponent(track.localPath)}`,
+        url: pathToFileURL(track.localPath).toString().replace(/^file:/, 'local-audio:'),
         source: 'local'
       };
     }
@@ -266,6 +313,7 @@ ipcMain.handle('get-downloaded-tracks', async () => {
 
     const audioExts = new Set(['.mp3', '.m4a', '.flac', '.opus', '.wav', '.ogg']);
     const entries = fs.readdirSync(downloadDir, { withFileTypes: true });
+    const metadataMap = getDownloadedMetadataMap();
 
     const tracks = [];
     for (const file of entries) {
@@ -286,17 +334,34 @@ ipcMain.handle('get-downloaded-tracks', async () => {
         title = parts.slice(1).join(' - ').trim();
       }
 
+      const cacheKey = `${artist} - ${title}`.toLowerCase();
+      let meta = metadataMap[cacheKey] || metadataMap[file.name.toLowerCase()] || null;
+      let coverUrl = meta ? meta.cover_url : null;
+      let albumName = meta ? meta.album : 'Descargas Locales';
+
+      // Check if a companion thumbnail exists next to the file (e.g. "Artist - Title.jpg" or ".webp")
+      if (!coverUrl) {
+        for (const cExt of possibleCovers) {
+          const companion = path.join(downloadDir, nameWithoutExt + cExt);
+          if (fs.existsSync(companion)) {
+            coverUrl = pathToFileURL(companion).toString().replace(/^file:/, 'local-audio:');
+            break;
+          }
+        }
+      }
+
       const sizeMb = (stat.size / (1024 * 1024)).toFixed(1) + ' MB';
 
       tracks.push({
         id: `local-${stat.ino || stat.mtimeMs}`,
         name: title,
         artists: artist,
-        album: 'Descargas Locales',
+        album: albumName,
         format: ext.replace('.', '').toUpperCase(),
         size: sizeMb,
         mtime: stat.mtimeMs,
         localPath: fullPath,
+        cover_url: coverUrl || '',
         isLocal: true,
         duration_str: '--:--'
       });
@@ -308,6 +373,36 @@ ipcMain.handle('get-downloaded-tracks', async () => {
     console.error('Error in get-downloaded-tracks:', err);
     return { success: false, error: err.message, tracks: [] };
   }
+});
+
+ipcMain.handle('resolve-cover-art', async (event, { artist, title }) => {
+  try {
+    if (!artist || !title) return { success: false };
+    const key = `${artist} - ${title}`.toLowerCase();
+    const map = getDownloadedMetadataMap();
+    if (map[key] && map[key].cover_url) {
+      return { success: true, cover_url: map[key].cover_url, album: map[key].album };
+    }
+
+    const query = encodeURIComponent(`${artist} ${title}`);
+    const res = await net.fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.results && data.results.length > 0) {
+        const art = (data.results[0].artworkUrl100 || '').replace('100x100bb', '600x600bb');
+        if (art) {
+          saveDownloadedMetadata(key, {
+            cover_url: art,
+            album: data.results[0].collectionName || 'Descargas Locales'
+          });
+          return { success: true, cover_url: art, album: data.results[0].collectionName };
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('resolve-cover-art warning:', e.message);
+  }
+  return { success: false };
 });
 
 ipcMain.handle('show-item-in-folder', async (event, fullPath) => {
@@ -376,6 +471,16 @@ ipcMain.handle('start-batch-download', async (event, { tracks, format, concurren
         concurrency: targetConcurrency
       },
       (progressData) => {
+        if (progressData && progressData.status === 'completed' && progressData.track) {
+          const t = progressData.track;
+          const k = `${t.artists || ''} - ${t.name || ''}`.toLowerCase().trim();
+          if (t.cover_url) {
+            saveDownloadedMetadata(k, {
+              cover_url: t.cover_url,
+              album: t.album || ''
+            });
+          }
+        }
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('download-progress', progressData);
         }

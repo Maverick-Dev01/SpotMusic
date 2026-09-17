@@ -620,9 +620,34 @@ body.platform-not-mac .titlebar-drag {
   width: 260px;
 }
 
+/* Responsive Table Container */
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  overflow-y: visible;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+  padding-bottom: 4px;
+}
+
+.table-responsive::-webkit-scrollbar {
+  height: 6px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.table-responsive::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
 /* Track Table */
 .tracks-table {
   width: 100%;
+  min-width: 580px;
   border-collapse: collapse;
 }
 
@@ -635,6 +660,7 @@ body.platform-not-mac .titlebar-drag {
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  white-space: nowrap;
 }
 
 .tracks-table td {
@@ -653,24 +679,26 @@ body.platform-not-mac .titlebar-drag {
 }
 
 .col-num {
-  width: 40px;
+  width: 36px;
   color: var(--text-muted);
   font-size: 13px;
+  text-align: center;
 }
 
 .col-check {
-  width: 40px;
+  width: 36px;
 }
 
 .col-title {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 180px;
 }
 
 .track-thumb {
-  width: 42px;
-  height: 42px;
+  width: 40px;
+  height: 40px;
   border-radius: 4px;
   object-fit: cover;
   background-color: #282828;
@@ -681,6 +709,8 @@ body.platform-not-mac .titlebar-drag {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  min-width: 0;
+  flex: 1;
 }
 
 .track-name {
@@ -689,7 +719,7 @@ body.platform-not-mac .titlebar-drag {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 380px;
+  max-width: clamp(160px, 26vw, 360px);
 }
 
 .track-artist {
@@ -698,7 +728,7 @@ body.platform-not-mac .titlebar-drag {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 380px;
+  max-width: clamp(160px, 24vw, 340px);
 }
 
 .col-album {
@@ -707,18 +737,41 @@ body.platform-not-mac .titlebar-drag {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 200px;
+  max-width: clamp(100px, 16vw, 200px);
 }
 
 .col-time {
   color: var(--text-muted);
   font-size: 13px;
-  width: 70px;
+  width: 65px;
+  white-space: nowrap;
 }
 
 .col-status {
-  width: 180px;
+  width: 170px;
   text-align: right;
+  white-space: nowrap;
+}
+
+.col-actions-header {
+  width: 110px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.btn-download-single,
+.btn-download-rec {
+  white-space: nowrap;
+  flex-shrink: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+}
+
+@media (max-width: 1080px) {
+  .col-album,
+  .col-album-header {
+    display: none;
+  }
 }
 
 /* Custom Checkbox */

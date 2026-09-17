@@ -13,7 +13,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     currentPlayingBtn: null,
     catalogResults: null,
     lastSearchQuery: '',
-    lastCatalogTab: 'tab-tracks'
+    lastCatalogTab: 'tab-tracks',
+    searchQuery: '',
+    downloadFilter: '',
+    downloadedTracks: []
   };
 
   // Audio Player Instance
@@ -150,6 +153,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   const downloadedTracksCount = document.getElementById('downloaded-tracks-count');
   const btnRefreshDownloaded = document.getElementById('btn-refresh-downloaded');
 
+  // DOM Elements - Custom Delete Confirmation Modal
+  const deleteConfirmModal = document.getElementById('delete-confirm-modal');
+  const btnCloseDeleteModal = document.getElementById('btn-close-delete-modal');
+  const btnCancelDelete = document.getElementById('btn-cancel-delete');
+  const btnConfirmDelete = document.getElementById('btn-confirm-delete');
+  const deleteModalTrackCover = document.getElementById('delete-modal-track-cover');
+  const deleteModalTrackName = document.getElementById('delete-modal-track-name');
+  const deleteModalTrackArtist = document.getElementById('delete-modal-track-artist');
+
   // DOM Elements - Updater
   const updateModal = document.getElementById('update-modal');
   const btnCloseUpdateModal = document.getElementById('btn-close-update-modal');
@@ -282,6 +294,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 3. Navigation
   function switchView(viewId) {
+    if (state.currentView === 'search-view') {
+      state.searchQuery = inputPlaylistUrl.value;
+    } else if (state.currentView === 'downloads-view') {
+      state.downloadFilter = inputPlaylistUrl.value;
+    }
+
     state.currentView = viewId;
     if (viewId === 'search-view') {
       navSearch.classList.add('active');
@@ -289,6 +307,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       searchView.classList.add('active');
       downloadsView.classList.remove('active');
       inputPlaylistUrl.placeholder = 'Pega aquí el enlace de tu playlist (ej: https://open.spotify.com/playlist/...) o busca por artista/canción';
+      inputPlaylistUrl.value = state.searchQuery || '';
       const btnText = document.getElementById('search-btn-text');
       if (btnText) btnText.textContent = 'Buscar';
     } else {
@@ -297,10 +316,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       searchView.classList.remove('active');
       downloadsView.classList.add('active');
       inputPlaylistUrl.placeholder = 'Filtrar tus canciones descargadas (por título, artista o formato)...';
+      inputPlaylistUrl.value = state.downloadFilter || '';
       const btnText = document.getElementById('search-btn-text');
       if (btnText) btnText.textContent = 'Filtrar';
       renderDownloadsView();
-      renderDownloadedLibrary(inputPlaylistUrl.value.trim());
+      renderDownloadedLibrary(state.downloadFilter ? state.downloadFilter.trim() : '');
     }
   }
 
@@ -382,9 +402,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     // If currently in Downloads view, filter local downloaded music!
     if (state.currentView === 'downloads-view') {
+      state.downloadFilter = query;
       renderDownloadedLibrary(query);
       return;
     }
+    state.searchQuery = query;
 
     if (!query) {
       return showToast('Escribe el nombre de un artista, canción o pega un enlace de Spotify', true);
@@ -451,7 +473,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
   inputPlaylistUrl.addEventListener('input', () => {
     if (state.currentView === 'downloads-view') {
-      renderDownloadedLibrary(inputPlaylistUrl.value.trim());
+      state.downloadFilter = inputPlaylistUrl.value;
+      renderDownloadedLibrary(state.downloadFilter.trim());
+    } else {
+      state.searchQuery = inputPlaylistUrl.value;
     }
   });
 
@@ -949,12 +974,18 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
 
     bottomPlayer.style.display = 'flex';
-    playerTrackCover.src = track.cover_url || '';
+    if (track.cover_url) {
+      playerTrackCover.src = track.cover_url;
+      playerTrackCover.style.display = 'block';
+    } else {
+      playerTrackCover.src = '';
+      playerTrackCover.style.display = 'none';
+    }
     playerTrackTitle.textContent = track.name;
     playerTrackArtist.textContent = `${track.artists} (Cargando audio...)`;
 
     try {
-      // Resolve audio using multi-tier resolver (Spotify -> iTunes -> yt-dlp)
+      // Resolve audio using multi-tier resolver (Local -> Spotify -> iTunes -> yt-dlp)
       const res = await window.snapAPI.getTrackAudio(track);
       if (!res.success || !res.url) {
         throw new Error(res.error || 'No se pudo obtener el audio');
@@ -967,6 +998,20 @@ document.addEventListener('DOMContentLoaded', async () => {
       await audio.play();
 
       playerTrackArtist.textContent = track.artists;
+      if (track.cover_url) {
+        playerTrackCover.src = track.cover_url;
+        playerTrackCover.style.display = 'block';
+      } else if (track.isLocal && window.snapAPI.resolveCoverArt) {
+        window.snapAPI.resolveCoverArt({ artist: track.artists, title: track.name }).then(artRes => {
+          if (artRes && artRes.success && artRes.cover_url) {
+            track.cover_url = artRes.cover_url;
+            if (state.currentPlayingTrack && state.currentPlayingTrack.id === track.id) {
+              playerTrackCover.src = artRes.cover_url;
+              playerTrackCover.style.display = 'block';
+            }
+          }
+        }).catch(() => {});
+      }
       if (triggerBtn) {
         triggerBtn.classList.remove('loading');
         triggerBtn.classList.add('playing');
@@ -1283,17 +1328,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         const tr = document.createElement('tr');
         tr.className = 'track-row';
         const formatClass = (track.format || 'mp3').toLowerCase();
+        const isCurrentlyPlaying = state.currentPlayingTrack && state.currentPlayingTrack.id === track.id && !audio.paused;
+
         tr.innerHTML = `
           <td class="col-num">${idx + 1}</td>
           <td>
-            <button class="btn-play-row btn-play-local-track" data-id="${track.id}" title="Reproducir Canción">
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <button class="btn-play-row btn-play-local-track ${isCurrentlyPlaying ? 'playing' : ''}" data-id="${track.id}" title="Reproducir Canción">
+              ${isCurrentlyPlaying
+                ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>'
+                : '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>'
+              }
             </button>
           </td>
           <td>
             <div class="col-title">
-              <div class="brand-icon" style="width: 32px; height: 32px; border-radius: 4px; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
+              <div class="track-thumb-wrapper" style="width: 40px; height: 40px; border-radius: 4px; overflow: hidden; background: rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; flex-shrink:0;">
+                <img class="track-thumb local-track-cover" src="${track.cover_url || ''}" style="width: 100%; height: 100%; object-fit: cover; ${!track.cover_url ? 'display: none;' : ''}" />
+                <svg class="placeholder-thumb-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="${track.cover_url ? 'display: none;' : ''}"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle></svg>
               </div>
               <div class="track-info">
                 <span class="track-name" title="${track.name}">${track.name}</span>
@@ -1316,18 +1367,48 @@ document.addEventListener('DOMContentLoaded', async () => {
         `;
 
         const playBtn = tr.querySelector('.btn-play-local-track');
+        if (isCurrentlyPlaying) {
+          state.currentPlayingBtn = playBtn;
+        }
         playBtn.addEventListener('click', () => playAudio(track, playBtn));
+
+        // Lazy resolve cover if missing
+        if (!track.cover_url && window.snapAPI.resolveCoverArt) {
+          const img = tr.querySelector('.local-track-cover');
+          const placeholder = tr.querySelector('.placeholder-thumb-icon');
+          window.snapAPI.resolveCoverArt({ artist: track.artists, title: track.name }).then(artRes => {
+            if (artRes && artRes.success && artRes.cover_url) {
+              track.cover_url = artRes.cover_url;
+              if (img) {
+                img.src = artRes.cover_url;
+                img.style.display = 'block';
+              }
+              if (placeholder) placeholder.style.display = 'none';
+              if (state.currentPlayingTrack && state.currentPlayingTrack.id === track.id) {
+                playerTrackCover.src = artRes.cover_url;
+                playerTrackCover.style.display = 'block';
+              }
+            }
+          }).catch(() => {});
+        }
 
         tr.querySelector('.btn-reveal-file').addEventListener('click', () => {
           window.snapAPI.showItemInFolder(track.localPath);
         });
 
         tr.querySelector('.btn-delete-file').addEventListener('click', async () => {
-          if (confirm(`¿Deseas eliminar "${track.name}" del disco?`)) {
+          const confirmed = await showDeleteConfirmModal(track);
+          if (confirmed) {
             const delRes = await window.snapAPI.deleteDownloadedTrack(track.localPath);
             if (delRes.success) {
               showToast(`Eliminada: ${track.name}`);
-              renderDownloadedLibrary();
+              if (state.currentPlayingTrack && state.currentPlayingTrack.id === track.id) {
+                audio.pause();
+                audio.src = '';
+                bottomPlayer.style.display = 'none';
+                state.currentPlayingTrack = null;
+              }
+              renderDownloadedLibrary(state.downloadFilter || '');
             } else {
               showToast('Error al eliminar archivo: ' + (delRes.error || ''), true);
             }
@@ -1341,10 +1422,66 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
   }
 
+  function showDeleteConfirmModal(track) {
+    return new Promise((resolve) => {
+      if (!deleteConfirmModal) {
+        resolve(confirm(`¿Deseas eliminar "${track.name}" del disco?`));
+        return;
+      }
+
+      if (deleteModalTrackCover) {
+        if (track.cover_url) {
+          deleteModalTrackCover.src = track.cover_url;
+          deleteModalTrackCover.style.display = 'block';
+        } else {
+          deleteModalTrackCover.style.display = 'none';
+        }
+      }
+      if (deleteModalTrackName) deleteModalTrackName.textContent = track.name || 'Canción';
+      if (deleteModalTrackArtist) deleteModalTrackArtist.textContent = track.artists || 'Artista desconocido';
+
+      deleteConfirmModal.classList.add('open');
+
+      let done = false;
+      const cleanup = () => {
+        deleteConfirmModal.classList.remove('open');
+        btnConfirmDelete?.removeEventListener('click', onConfirm);
+        btnCancelDelete?.removeEventListener('click', onCancel);
+        btnCloseDeleteModal?.removeEventListener('click', onCancel);
+        deleteConfirmModal?.removeEventListener('click', onBackdrop);
+      };
+
+      const onConfirm = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve(true);
+      };
+
+      const onCancel = () => {
+        if (done) return;
+        done = true;
+        cleanup();
+        resolve(false);
+      };
+
+      const onBackdrop = (e) => {
+        if (e.target === deleteConfirmModal) {
+          onCancel();
+        }
+      };
+
+      btnConfirmDelete?.addEventListener('click', onConfirm);
+      btnCancelDelete?.addEventListener('click', onCancel);
+      btnCloseDeleteModal?.addEventListener('click', onCancel);
+      deleteConfirmModal?.addEventListener('click', onBackdrop);
+    });
+  }
+
   if (btnRefreshDownloaded) {
     btnRefreshDownloaded.addEventListener('click', () => {
       showToast('Actualizando lista de música...');
-      renderDownloadedLibrary();
+      renderDownloadedLibrary(state.downloadFilter || '');
     });
   }
 
