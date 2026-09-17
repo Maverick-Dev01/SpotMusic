@@ -10,7 +10,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     filterText: '',
     currentView: 'search-view',
     currentPlayingTrack: null,
-    catalogResults: null
+    currentPlayingBtn: null,
+    catalogResults: null,
+    lastSearchQuery: '',
+    lastCatalogTab: 'tab-tracks'
   };
 
   // Audio Player Instance
@@ -49,20 +52,28 @@ document.addEventListener('DOMContentLoaded', async () => {
   const emptyStateView = document.getElementById('empty-state-view');
   const playlistResultsContainer = document.getElementById('playlist-results-container');
   const catalogResultsContainer = document.getElementById('catalog-results-container');
+  const catalogQueryDisplay = document.getElementById('catalog-query-display');
+  const catalogBackNav = document.getElementById('catalog-back-nav');
+  const btnBackToCatalog = document.getElementById('btn-back-to-catalog');
+  const catalogBackQueryText = document.getElementById('catalog-back-query-text');
 
   // DOM Elements - Direct Search Tabs
   const tabBtnTracks = document.getElementById('tab-btn-tracks');
   const tabBtnAlbums = document.getElementById('tab-btn-albums');
   const tabBtnPlaylists = document.getElementById('tab-btn-playlists');
+  const tabBtnRecommendations = document.getElementById('tab-btn-recommendations');
   const countTracks = document.getElementById('count-tracks');
   const countAlbums = document.getElementById('count-albums');
   const countPlaylists = document.getElementById('count-playlists');
+  const countRecommendations = document.getElementById('count-recommendations');
   const tabTracks = document.getElementById('tab-tracks');
   const tabAlbums = document.getElementById('tab-albums');
   const tabPlaylists = document.getElementById('tab-playlists');
+  const tabRecommendations = document.getElementById('tab-recommendations');
   const catalogTracksTbody = document.getElementById('catalog-tracks-tbody');
   const catalogAlbumsGrid = document.getElementById('catalog-albums-grid');
   const catalogPlaylistsGrid = document.getElementById('catalog-playlists-grid');
+  const catalogRecommendationsTbody = document.getElementById('catalog-recommendations-tbody');
 
   // DOM Elements - Playlist View Hero
   const heroCover = document.getElementById('hero-cover');
@@ -387,8 +398,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         const response = await window.snapAPI.fetchPlaylist(query);
         if (response.success && response.data) {
           state.playlist = response.data;
-          state.selectedIds = new Set(response.data.tracks.map(t => t.id));
+          state.selectedIds = new Set(response.data.tracks.map((t) => t.id));
           catalogResultsContainer.style.display = 'none';
+
+          // If catalog search was active, show back navigation bar
+          if (state.catalogResults && catalogBackNav) {
+            catalogBackNav.style.display = 'flex';
+            if (catalogBackQueryText) {
+              catalogBackQueryText.textContent = `Resultados para: "${state.lastSearchQuery}"`;
+            }
+          } else if (catalogBackNav) {
+            catalogBackNav.style.display = 'none';
+          }
+
           renderPlaylist(response.data);
           showToast(`Cargada: ${response.data.name} (${response.data.tracks.length} canciones)`);
         } else {
@@ -399,12 +421,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         const response = await window.snapAPI.searchCatalog(query);
         if (response.success && response.data) {
           state.catalogResults = response.data;
+          state.lastSearchQuery = query;
           playlistResultsContainer.style.display = 'none';
           emptyStateView.style.display = 'none';
-          renderCatalogResults(response.data);
+          if (catalogBackNav) catalogBackNav.style.display = 'none';
+          renderCatalogResults(response.data, query);
           showToast(`Búsqueda: ${response.data.tracks.length} pistas, ${response.data.albums.length} álbumes, ${response.data.playlists.length} playlists`);
         } else {
-          showToast(response.error || 'Error en la búsqueda de Spotify', true);
+          showToast(response.error || 'Error en la búsqueda', true);
         }
       }
     } catch (err) {
@@ -516,7 +540,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const playBtn = item.querySelector('.btn-suggestion-play');
       playBtn.addEventListener('click', (e) => {
         e.stopPropagation();
-        playAudio(track);
+        playAudio(track, playBtn);
       });
 
       const dlBtn = item.querySelector('.btn-suggestion-download');
@@ -539,11 +563,20 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 5. Render Direct Catalog Search Results
-  function renderCatalogResults(data) {
+  function renderCatalogResults(data, query) {
+    state.catalogResults = data;
     catalogResultsContainer.style.display = 'block';
+    
+    if (catalogQueryDisplay) {
+      catalogQueryDisplay.textContent = query || state.lastSearchQuery || '';
+    }
+
     countTracks.textContent = data.tracks.length;
     countAlbums.textContent = data.albums.length;
     countPlaylists.textContent = data.playlists.length;
+    if (countRecommendations) {
+      countRecommendations.textContent = (data.recommendations || []).length;
+    }
 
     // Render Tracks Tab
     catalogTracksTbody.innerHTML = '';
@@ -575,7 +608,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         </td>
       `;
 
-      tr.querySelector('.btn-play-track').addEventListener('click', () => playAudio(track));
+      const playBtn = tr.querySelector('.btn-play-track');
+      playBtn.addEventListener('click', () => playAudio(track, playBtn));
       tr.querySelector('.btn-download-single').addEventListener('click', () => triggerBatchDownload([track]));
       catalogTracksTbody.appendChild(tr);
     });
@@ -617,12 +651,56 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       catalogPlaylistsGrid.appendChild(card);
     });
+
+    // Render Recommendations Tab
+    if (catalogRecommendationsTbody) {
+      catalogRecommendationsTbody.innerHTML = '';
+      const recs = data.recommendations || [];
+      if (recs.length === 0) {
+        catalogRecommendationsTbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 24px; color: var(--text-muted);">No hay recomendaciones adicionales disponibles.</td></tr>';
+      } else {
+        recs.forEach((track, idx) => {
+          const tr = document.createElement('tr');
+          tr.className = 'track-row';
+          tr.innerHTML = `
+            <td class="col-num">${idx + 1}</td>
+            <td>
+              <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir Preview">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+              </button>
+            </td>
+            <td>
+              <div class="col-title">
+                <img class="track-thumb" src="${track.cover_url || ''}" alt="Cover" onerror="this.style.display='none'" />
+                <div class="track-info">
+                  <span class="track-name" title="${track.name}">${track.name}</span>
+                  <span class="track-artist" title="${track.artists}">${track.artists}</span>
+                </div>
+              </div>
+            </td>
+            <td class="col-album">${track.album || '-'}</td>
+            <td class="col-time">${track.duration_str}</td>
+            <td style="text-align: right;">
+              <button class="btn btn-primary btn-sm btn-download-single" data-id="${track.id}">
+                Descargar
+              </button>
+            </td>
+          `;
+
+          const playBtn = tr.querySelector('.btn-play-track');
+          playBtn.addEventListener('click', () => playAudio(track, playBtn));
+          tr.querySelector('.btn-download-single').addEventListener('click', () => triggerBatchDownload([track]));
+          catalogRecommendationsTbody.appendChild(tr);
+        });
+      }
+    }
   }
 
   // Catalog Tabs switching
   function switchCatalogTab(tabId) {
-    [tabBtnTracks, tabBtnAlbums, tabBtnPlaylists].forEach(btn => btn.classList.remove('active'));
-    [tabTracks, tabAlbums, tabPlaylists].forEach(el => el.style.display = 'none');
+    state.lastCatalogTab = tabId;
+    [tabBtnTracks, tabBtnAlbums, tabBtnPlaylists, tabBtnRecommendations].forEach(btn => btn && btn.classList.remove('active'));
+    [tabTracks, tabAlbums, tabPlaylists, tabRecommendations].forEach(el => { if (el) el.style.display = 'none'; });
 
     if (tabId === 'tab-tracks') {
       tabBtnTracks.classList.add('active');
@@ -630,6 +708,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     } else if (tabId === 'tab-albums') {
       tabBtnAlbums.classList.add('active');
       tabAlbums.style.display = 'block';
+    } else if (tabId === 'tab-recommendations') {
+      if (tabBtnRecommendations) tabBtnRecommendations.classList.add('active');
+      if (tabRecommendations) tabRecommendations.style.display = 'block';
     } else {
       tabBtnPlaylists.classList.add('active');
       tabPlaylists.style.display = 'block';
@@ -639,6 +720,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   tabBtnTracks.addEventListener('click', () => switchCatalogTab('tab-tracks'));
   tabBtnAlbums.addEventListener('click', () => switchCatalogTab('tab-albums'));
   tabBtnPlaylists.addEventListener('click', () => switchCatalogTab('tab-playlists'));
+  if (tabBtnRecommendations) {
+    tabBtnRecommendations.addEventListener('click', () => switchCatalogTab('tab-recommendations'));
+  }
+
+  // Back to Catalog Search Results Button
+  if (btnBackToCatalog) {
+    btnBackToCatalog.addEventListener('click', () => {
+      playlistResultsContainer.style.display = 'none';
+      catalogResultsContainer.style.display = 'block';
+      if (catalogBackNav) catalogBackNav.style.display = 'none';
+      if (state.catalogResults) {
+        renderCatalogResults(state.catalogResults, state.lastSearchQuery);
+      }
+      switchCatalogTab(state.lastCatalogTab || 'tab-tracks');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    });
+  }
 
   // 6. Render Playlist Hero and Tracks Table
   function renderPlaylist(playlist) {
@@ -744,7 +842,8 @@ document.addEventListener('DOMContentLoaded', async () => {
         updateSelectionUI();
       });
 
-      tr.querySelector('.btn-play-track').addEventListener('click', () => playAudio(track));
+      const playBtn = tr.querySelector('.btn-play-track');
+      playBtn.addEventListener('click', () => playAudio(track, playBtn));
 
       tracksTbody.appendChild(tr);
     });
@@ -785,39 +884,106 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 7. Audio Player Engine
-  function playAudio(track) {
+  async function playAudio(track, triggerBtn = null) {
     if (!track) return;
 
-    // Check if track has preview URL
-    const preview = track.preview_url || track.audioPreview?.url;
-
-    if (!preview) {
-      showToast(`Esta pista no tiene preview disponible. Puedes descargarla directamente.`, true);
+    // If clicking the track that is already playing, toggle pause/play
+    if (state.currentPlayingTrack && state.currentPlayingTrack.id === track.id) {
+      if (audio.paused) {
+        audio.play().catch(e => console.warn('Audio resume error:', e));
+        iconPlay.style.display = 'none';
+        iconPause.style.display = 'block';
+        if (triggerBtn) triggerBtn.classList.add('playing');
+      } else {
+        audio.pause();
+        iconPlay.style.display = 'block';
+        iconPause.style.display = 'none';
+        if (triggerBtn) triggerBtn.classList.remove('playing');
+      }
       return;
     }
 
-    state.currentPlayingTrack = track;
-    audio.src = preview;
-    audio.play();
+    // Reset previous button
+    if (state.currentPlayingBtn) {
+      state.currentPlayingBtn.classList.remove('playing', 'loading');
+      state.currentPlayingBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+    }
+
+    // Indicate loading on current button
+    if (triggerBtn) {
+      triggerBtn.classList.add('loading');
+      triggerBtn.innerHTML = '<svg class="spinner" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"></circle><path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor"></path></svg>';
+    }
 
     bottomPlayer.style.display = 'flex';
     playerTrackCover.src = track.cover_url || '';
     playerTrackTitle.textContent = track.name;
-    playerTrackArtist.textContent = track.artists;
+    playerTrackArtist.textContent = `${track.artists} (Cargando audio...)`;
 
-    iconPlay.style.display = 'none';
-    iconPause.style.display = 'block';
+    try {
+      // Resolve audio using multi-tier resolver (Spotify -> iTunes -> yt-dlp)
+      const res = await window.snapAPI.getTrackAudio(track);
+      if (!res.success || !res.url) {
+        throw new Error(res.error || 'No se pudo obtener el audio');
+      }
+
+      state.currentPlayingTrack = track;
+      state.currentPlayingBtn = triggerBtn;
+
+      audio.src = res.url;
+      await audio.play();
+
+      playerTrackArtist.textContent = track.artists;
+      if (triggerBtn) {
+        triggerBtn.classList.remove('loading');
+        triggerBtn.classList.add('playing');
+        triggerBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+      }
+      iconPlay.style.display = 'none';
+      iconPause.style.display = 'block';
+    } catch (err) {
+      console.error('Audio playback error:', err);
+      showToast(`No se pudo reproducir "${track.name}". Puedes descargarla directamente.`, true);
+      if (triggerBtn) {
+        triggerBtn.classList.remove('loading', 'playing');
+        triggerBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+      }
+      playerTrackArtist.textContent = track.artists;
+      iconPlay.style.display = 'block';
+      iconPause.style.display = 'none';
+    }
   }
 
   btnPlayerToggle.addEventListener('click', () => {
     if (audio.paused) {
-      audio.play();
+      audio.play().catch(e => console.warn('Play failed:', e));
       iconPlay.style.display = 'none';
       iconPause.style.display = 'block';
+      if (state.currentPlayingBtn) state.currentPlayingBtn.classList.add('playing');
     } else {
       audio.pause();
       iconPlay.style.display = 'block';
       iconPause.style.display = 'none';
+      if (state.currentPlayingBtn) state.currentPlayingBtn.classList.remove('playing');
+    }
+  });
+
+  audio.addEventListener('play', () => {
+    iconPlay.style.display = 'none';
+    iconPause.style.display = 'block';
+    if (state.currentPlayingBtn) {
+      state.currentPlayingBtn.classList.remove('loading');
+      state.currentPlayingBtn.classList.add('playing');
+      state.currentPlayingBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>';
+    }
+  });
+
+  audio.addEventListener('pause', () => {
+    iconPlay.style.display = 'block';
+    iconPause.style.display = 'none';
+    if (state.currentPlayingBtn) {
+      state.currentPlayingBtn.classList.remove('playing');
+      state.currentPlayingBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
     }
   });
 
@@ -838,6 +1004,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
     playerSeek.value = 0;
+    if (state.currentPlayingBtn) {
+      state.currentPlayingBtn.classList.remove('playing', 'loading');
+      state.currentPlayingBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+    }
+  });
+
+  audio.addEventListener('error', (e) => {
+    console.warn('Audio stream error event:', e);
+    iconPlay.style.display = 'block';
+    iconPause.style.display = 'none';
+    if (state.currentPlayingBtn) {
+      state.currentPlayingBtn.classList.remove('playing', 'loading');
+      state.currentPlayingBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
+    }
   });
 
   playerSeek.addEventListener('input', (e) => {

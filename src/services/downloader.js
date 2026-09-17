@@ -335,6 +335,53 @@ class DownloaderService {
     this.activeProcesses.clear();
     this.runningCount = 0;
   }
+
+  async getAudioStreamUrl(title, artist) {
+    if (!this.ytDlpPath || !fs.existsSync(this.ytDlpPath)) {
+      this.ytDlpPath = this.resolveExecutable('yt-dlp', ['/opt/homebrew/bin/yt-dlp', '/usr/local/bin/yt-dlp']);
+    }
+    if (!this.ytDlpPath) return null;
+
+    const query = `ytsearch1:${title} ${artist} audio`;
+    return new Promise((resolve) => {
+      const args = [
+        query,
+        '-g',
+        '-f', '140/bestaudio/best',
+        '--no-playlist',
+        '--no-warnings'
+      ];
+
+      let child;
+      try {
+        child = spawn(this.ytDlpPath, args, {
+          env: {
+            ...process.env,
+            PATH: `${path.dirname(this.ffmpegPath || '')}:${process.env.PATH}`
+          }
+        });
+      } catch (e) {
+        return resolve(null);
+      }
+
+      let stdout = '';
+      child.stdout.on('data', (d) => { stdout += d.toString(); });
+      child.on('close', (code) => {
+        if (code === 0 && stdout.trim()) {
+          const lines = stdout.trim().split('\n').filter((l) => l.startsWith('http'));
+          resolve(lines[0] || null);
+        } else {
+          resolve(null);
+        }
+      });
+      child.on('error', () => resolve(null));
+
+      setTimeout(() => {
+        try { child.kill('SIGTERM'); } catch (e) {}
+        resolve(null);
+      }, 9000);
+    });
+  }
 }
 
 module.exports = new DownloaderService();

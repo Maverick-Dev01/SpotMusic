@@ -1317,6 +1317,32 @@ body.platform-not-mac .bottom-player {
   border-color: var(--accent);
 }
 
+.catalog-back-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius-md);
+  margin-bottom: 20px;
+}
+
+.catalog-back-bar button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-play-row.loading svg {
+  animation: playSpin 0.8s linear infinite;
+}
+
+@keyframes playSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
 .cards-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));

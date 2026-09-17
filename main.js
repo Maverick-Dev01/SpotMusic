@@ -146,9 +146,60 @@ ipcMain.handle('search-catalog', async (event, query) => {
     console.error('Error in search-catalog:', err);
     return {
       success: false,
-      error: err.error?.message || err.message || 'Error al buscar en Spotify'
+      error: err.error?.message || err.message || 'Error al buscar en el catálogo'
     };
   }
+});
+
+const streamAudioCache = new Map();
+
+ipcMain.handle('get-track-audio', async (event, track) => {
+  if (!track || !track.name) {
+    return { success: false, error: 'Información de pista no válida' };
+  }
+
+  const cacheKey = `${track.name} - ${track.artists || ''}`.toLowerCase().trim();
+  if (streamAudioCache.has(cacheKey)) {
+    return { success: true, url: streamAudioCache.get(cacheKey), source: 'cache' };
+  }
+
+  // 1. Check if track already has a valid preview_url from Spotify
+  if (track.preview_url && typeof track.preview_url === 'string' && track.preview_url.startsWith('http')) {
+    streamAudioCache.set(cacheKey, track.preview_url);
+    return { success: true, url: track.preview_url, source: 'spotify' };
+  }
+
+  // 2. Query iTunes Preview Search API (~100ms ultra-fast official 30s preview)
+  try {
+    const itunesTerm = encodeURIComponent(`${track.name} ${track.artists || ''}`.trim());
+    const itunesRes = await fetch(`https://itunes.apple.com/search?term=${itunesTerm}&entity=song&limit=1`);
+    if (itunesRes.ok) {
+      const data = await itunesRes.json();
+      const previewUrl = data.results?.[0]?.previewUrl;
+      if (previewUrl) {
+        streamAudioCache.set(cacheKey, previewUrl);
+        return { success: true, url: previewUrl, source: 'itunes' };
+      }
+    }
+  } catch (err) {
+    console.warn('[iTunes preview lookup failed]', err.message);
+  }
+
+  // 3. Fallback to yt-dlp direct audio stream extraction
+  try {
+    const ytStreamUrl = await downloaderService.getAudioStreamUrl(track.name, track.artists || '');
+    if (ytStreamUrl) {
+      streamAudioCache.set(cacheKey, ytStreamUrl);
+      return { success: true, url: ytStreamUrl, source: 'youtube' };
+    }
+  } catch (err) {
+    console.warn('[yt-dlp stream extraction failed]', err.message);
+  }
+
+  return {
+    success: false,
+    error: 'No se pudo obtener el audio de preescucha para esta pista'
+  };
 });
 
 ipcMain.handle('start-batch-download', async (event, { tracks, format, concurrency, downloadDir }) => {

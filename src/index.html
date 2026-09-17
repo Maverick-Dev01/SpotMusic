@@ -178,10 +178,17 @@
 
           <!-- Direct Catalog Search Results Container (Hidden until text search) -->
           <div id="catalog-results-container" style="display: none; padding-top: 10px;">
+            <div class="catalog-header-bar" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px;">
+              <div style="font-size: 13px; color: var(--text-muted);">
+                Resultados para: <strong id="catalog-query-display" style="color: var(--accent); font-weight: 700;"></strong>
+              </div>
+            </div>
+
             <div class="search-tabs-header">
               <button class="tab-btn active" id="tab-btn-tracks" data-tab="tab-tracks">🎵 Canciones (<span id="count-tracks">0</span>)</button>
               <button class="tab-btn" id="tab-btn-albums" data-tab="tab-albums">💿 Álbumes (<span id="count-albums">0</span>)</button>
               <button class="tab-btn" id="tab-btn-playlists" data-tab="tab-playlists">📋 Playlists (<span id="count-playlists">0</span>)</button>
+              <button class="tab-btn" id="tab-btn-recommendations" data-tab="tab-recommendations">✨ Recomendaciones (<span id="count-recommendations">0</span>)</button>
             </div>
 
             <!-- Tab Tracks -->
@@ -210,10 +217,36 @@
             <div class="search-tab-content" id="tab-playlists" style="display: none;">
               <div class="cards-grid" id="catalog-playlists-grid"></div>
             </div>
+
+            <!-- Tab Recommendations -->
+            <div class="search-tab-content" id="tab-recommendations" style="display: none;">
+              <table class="tracks-table">
+                <thead>
+                  <tr>
+                    <th class="col-num">#</th>
+                    <th style="width: 40px;"></th>
+                    <th>Título</th>
+                    <th>Álbum</th>
+                    <th class="col-time">Duración</th>
+                    <th style="width: 140px; text-align: right;">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody id="catalog-recommendations-tbody"></tbody>
+              </table>
+            </div>
           </div>
 
           <!-- Playlist Results Container (Hidden until search) -->
           <div id="playlist-results-container" style="display: none;">
+            <!-- Navigation Back to Search Results -->
+            <div id="catalog-back-nav" class="catalog-back-bar" style="display: none;">
+              <button class="btn btn-secondary btn-sm" id="btn-back-to-catalog" style="gap: 6px; font-weight: 600;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="15 18 9 12 15 6"></polyline></svg>
+                <span>← Volver a la lista de resultados</span>
+              </button>
+              <span id="catalog-back-query-text" style="font-size: 12px; color: var(--text-muted); margin-left: 12px;"></span>
+            </div>
+
             <!-- Hero Banner -->
             <div class="playlist-hero">
               <div class="playlist-cover-wrap">

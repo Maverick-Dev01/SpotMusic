@@ -274,65 +274,149 @@ class SpotifyService {
 
   async searchCatalog(query, clientId, clientSecret) {
     if (!query || typeof query !== 'string' || !query.trim()) {
-      return { tracks: [], albums: [], playlists: [] };
+      return { tracks: [], albums: [], playlists: [], recommendations: [] };
     }
 
-    if (!clientId || !clientSecret) {
-      throw new Error('Para realizar búsquedas directas por texto se requiere configurar tu Client ID y Client Secret en Ajustes.');
-    }
+    const cleanQuery = query.trim();
 
-    const token = await this.getClientCredentialsToken(clientId, clientSecret);
-    const encoded = encodeURIComponent(query.trim());
+    // 1. Try Spotify Official API if credentials are provided
+    if (clientId && clientSecret) {
+      try {
+        const token = await this.getClientCredentialsToken(clientId, clientSecret);
+        const encoded = encodeURIComponent(cleanQuery);
 
-    const options = {
-      hostname: 'api.spotify.com',
-      port: 443,
-      path: `/v1/search?q=${encoded}&type=track,album,playlist&limit=10`,
-      method: 'GET',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'User-Agent': 'SnapMusic/1.0'
+        const options = {
+          hostname: 'api.spotify.com',
+          port: 443,
+          path: `/v1/search?q=${encoded}&type=track,album,playlist&limit=20`,
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'User-Agent': 'SnapMusic/1.0'
+          }
+        };
+
+        const res = await this.makeHttpRequest(options);
+
+        const tracks = (res.tracks?.items || []).map((t) => {
+          const artists = (t.artists || []).map((a) => a.name).join(', ');
+          return {
+            id: t.id,
+            name: t.name,
+            artists: artists || 'Desconocido',
+            album: t.album?.name || '',
+            duration_ms: t.duration_ms || 0,
+            duration_str: this.formatDuration(t.duration_ms),
+            cover_url: t.album?.images?.[0]?.url || null,
+            preview_url: t.preview_url || null,
+            spotify_url: t.external_urls?.spotify || ''
+          };
+        });
+
+        const albums = (res.albums?.items || []).map((a) => ({
+          id: a.id,
+          name: a.name,
+          artists: (a.artists || []).map((art) => art.name).join(', '),
+          cover_url: a.images?.[0]?.url || null,
+          total_tracks: a.total_tracks || 0,
+          release_date: a.release_date || '',
+          spotify_url: a.external_urls?.spotify || `https://open.spotify.com/album/${a.id}`
+        }));
+
+        const playlists = (res.playlists?.items || []).filter((p) => p !== null).map((p) => ({
+          id: p.id,
+          name: p.name,
+          owner: p.owner?.display_name || 'Spotify',
+          cover_url: p.images?.[0]?.url || null,
+          total_tracks: p.tracks?.total || 0,
+          description: p.description || '',
+          spotify_url: p.external_urls?.spotify || `https://open.spotify.com/playlist/${p.id}`
+        }));
+
+        // Fetch top recommendations from primary artist
+        let recommendations = [];
+        if (res.tracks?.items?.length > 0 && res.tracks.items[0].artists?.[0]?.id) {
+          try {
+            const artistId = res.tracks.items[0].artists[0].id;
+            const topTracksRes = await this.makeHttpRequest({
+              hostname: 'api.spotify.com',
+              port: 443,
+              path: `/v1/artists/${artistId}/top-tracks?market=ES`,
+              method: 'GET',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+                'User-Agent': 'SnapMusic/1.0'
+              }
+            });
+
+            if (topTracksRes && topTracksRes.tracks) {
+              recommendations = topTracksRes.tracks
+                .filter((rt) => !tracks.some((tr) => tr.id === rt.id))
+                .slice(0, 10)
+                .map((t) => ({
+                  id: t.id,
+                  name: t.name,
+                  artists: (t.artists || []).map((a) => a.name).join(', ') || 'Desconocido',
+                  album: t.album?.name || '',
+                  duration_ms: t.duration_ms || 0,
+                  duration_str: this.formatDuration(t.duration_ms),
+                  cover_url: t.album?.images?.[0]?.url || null,
+                  preview_url: t.preview_url || null,
+                  spotify_url: t.external_urls?.spotify || ''
+                }));
+            }
+          } catch (e) {
+            // Ignore recommendations error
+          }
+        }
+
+        return { tracks, albums, playlists, recommendations };
+      } catch (err) {
+        console.warn('Spotify catalog search error, falling back to public iTunes search:', err.message);
       }
-    };
+    }
 
-    const res = await this.makeHttpRequest(options);
+    // 2. Seamless Public Search Fallback via iTunes Search API (Zero-config)
+    try {
+      const encoded = encodeURIComponent(cleanQuery);
+      const [songRes, albumRes] = await Promise.all([
+        fetch(`https://itunes.apple.com/search?term=${encoded}&entity=song&limit=25`),
+        fetch(`https://itunes.apple.com/search?term=${encoded}&entity=album&limit=12`)
+      ]);
 
-    const tracks = (res.tracks?.items || []).map(t => {
-      const artists = (t.artists || []).map(a => a.name).join(', ');
-      return {
-        id: t.id,
-        name: t.name,
-        artists: artists || 'Desconocido',
-        album: t.album?.name || '',
-        duration_ms: t.duration_ms || 0,
-        duration_str: this.formatDuration(t.duration_ms),
-        cover_url: t.album?.images?.[0]?.url || null,
-        preview_url: t.preview_url || null,
-        spotify_url: t.external_urls?.spotify || ''
-      };
-    });
+      const songData = songRes.ok ? await songRes.json() : { results: [] };
+      const albumData = albumRes.ok ? await albumRes.json() : { results: [] };
 
-    const albums = (res.albums?.items || []).map(a => ({
-      id: a.id,
-      name: a.name,
-      artists: (a.artists || []).map(art => art.name).join(', '),
-      cover_url: a.images?.[0]?.url || null,
-      total_tracks: a.total_tracks || 0,
-      release_date: a.release_date || '',
-      spotify_url: a.external_urls?.spotify || `https://open.spotify.com/album/${a.id}`
-    }));
+      const allTracks = (songData.results || []).map((t, idx) => ({
+        id: String(t.trackId || `itunes-${idx}`),
+        name: t.trackName || 'Pista',
+        artists: t.artistName || 'Desconocido',
+        album: t.collectionName || '',
+        duration_ms: t.trackTimeMillis || 0,
+        duration_str: this.formatDuration(t.trackTimeMillis),
+        cover_url: t.artworkUrl100 ? t.artworkUrl100.replace('100x100bb', '600x600bb') : null,
+        preview_url: t.previewUrl || null,
+        spotify_url: ''
+      }));
 
-    const playlists = (res.playlists?.items || []).filter(p => p !== null).map(p => ({
-      id: p.id,
-      name: p.name,
-      owner: p.owner?.display_name || 'Spotify',
-      cover_url: p.images?.[0]?.url || null,
-      total_tracks: p.tracks?.total || 0,
-      description: p.description || '',
-      spotify_url: p.external_urls?.spotify || `https://open.spotify.com/playlist/${p.id}`
-    }));
+      const tracks = allTracks.slice(0, 15);
+      const recommendations = allTracks.slice(15, 25);
 
-    return { tracks, albums, playlists };
+      const albums = (albumData.results || []).map((a, idx) => ({
+        id: String(a.collectionId || `album-${idx}`),
+        name: a.collectionName || 'Álbum',
+        artists: a.artistName || 'Desconocido',
+        cover_url: a.artworkUrl100 ? a.artworkUrl100.replace('100x100bb', '600x600bb') : null,
+        total_tracks: a.trackCount || 0,
+        release_date: a.releaseDate ? a.releaseDate.split('T')[0] : '',
+        spotify_url: ''
+      }));
+
+      return { tracks, albums, playlists: [], recommendations };
+    } catch (err) {
+      console.error('All catalog search providers failed:', err);
+      return { tracks: [], albums: [], playlists: [], recommendations: [] };
+    }
   }
 }
 

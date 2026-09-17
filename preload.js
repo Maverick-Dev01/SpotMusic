@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('snapAPI', {
   openFolder: (dirPath) => ipcRenderer.invoke('open-folder', dirPath),
   fetchPlaylist: (url) => ipcRenderer.invoke('fetch-playlist', url),
   searchCatalog: (query) => ipcRenderer.invoke('search-catalog', query),
+  getTrackAudio: (track) => ipcRenderer.invoke('get-track-audio', track),
   getLicenseStatus: () => ipcRenderer.invoke('get-license-status'),
   activateLicense: (token) => ipcRenderer.invoke('activate-license', token),
   removeLicense: () => ipcRenderer.invoke('remove-license'),
