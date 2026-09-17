@@ -942,6 +942,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   // 7. Audio Player Engine
+  let currentPlaySeq = 0;
+
   async function playAudio(track, triggerBtn = null) {
     if (!track) return;
 
@@ -960,6 +962,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       }
       return;
     }
+
+    const playSeq = ++currentPlaySeq;
 
     // Reset previous button
     if (state.currentPlayingBtn) {
@@ -985,8 +989,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     playerTrackArtist.textContent = `${track.artists} (Cargando audio...)`;
 
     try {
-      // Resolve audio using multi-tier resolver (Local -> Spotify -> iTunes -> yt-dlp)
+      // Resolve audio using multi-tier resolver (Local HTTP -> Spotify -> iTunes -> yt-dlp)
       const res = await window.snapAPI.getTrackAudio(track);
+      if (playSeq !== currentPlaySeq) return;
+
       if (!res.success || !res.url) {
         throw new Error(res.error || 'No se pudo obtener el audio');
       }
@@ -994,7 +1000,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       state.currentPlayingTrack = track;
       state.currentPlayingBtn = triggerBtn;
 
+      // Cleanly load and play audio source
+      audio.pause();
       audio.src = res.url;
+      audio.load();
       await audio.play();
 
       playerTrackArtist.textContent = track.artists;
@@ -1020,8 +1029,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       iconPlay.style.display = 'none';
       iconPause.style.display = 'block';
     } catch (err) {
+      if (playSeq !== currentPlaySeq) return;
       console.error('Audio playback error:', err);
-      showToast(`No se pudo reproducir "${track.name}". Puedes descargarla directamente.`, true);
+      showToast(`No se pudo reproducir "${track.name}". ${err.message || ''}`, true);
       if (triggerBtn) {
         triggerBtn.classList.remove('loading', 'playing');
         triggerBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
@@ -1034,6 +1044,10 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   btnPlayerToggle.addEventListener('click', () => {
     if (audio.paused) {
+      if (!audio.src && state.currentPlayingTrack) {
+        playAudio(state.currentPlayingTrack, state.currentPlayingBtn);
+        return;
+      }
       audio.play().catch(e => console.warn('Play failed:', e));
       iconPlay.style.display = 'none';
       iconPause.style.display = 'block';
@@ -1089,7 +1103,8 @@ document.addEventListener('DOMContentLoaded', async () => {
   });
 
   audio.addEventListener('error', (e) => {
-    console.warn('Audio stream error event:', e);
+    const mediaErr = audio.error;
+    console.warn('Audio stream error event:', mediaErr ? `Code ${mediaErr.code}: ${mediaErr.message}` : e);
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
     if (state.currentPlayingBtn) {
@@ -1319,10 +1334,12 @@ document.addEventListener('DOMContentLoaded', async () => {
               : 'Aún no hay canciones descargadas en la carpeta seleccionada.';
           }
         }
+        if (downloadedTracksTable) downloadedTracksTable.style.display = 'none';
         return;
       }
 
       if (emptyDownloadedState) emptyDownloadedState.style.display = 'none';
+      if (downloadedTracksTable) downloadedTracksTable.style.display = 'table';
 
       filtered.forEach((track, idx) => {
         const tr = document.createElement('tr');

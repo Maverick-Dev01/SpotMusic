@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('e
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const http = require('http');
 const { pathToFileURL } = require('url');
 const settingsService = require('./src/services/settings');
 const spotifyService = require('./src/services/spotify');
@@ -9,19 +10,113 @@ const downloaderService = require('./src/services/downloader');
 const licenseService = require('./src/services/licenseService');
 const updaterService = require('./src/services/updater');
 
-// Register local-audio scheme as privileged for seamless offline audio streaming
-protocol.registerSchemesAsPrivileged([
-  {
-    scheme: 'local-audio',
-    privileges: {
-      standard: true,
-      secure: true,
-      supportFetchAPI: true,
-      stream: true,
-      bypassCSP: true
-    }
-  }
-]);
+// Autoplay policy: allow audio playback without explicit direct user gesture tick
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
+// Internal HTTP Audio Streaming Server (supports HTTP 206 Partial Content / Range requests on Windows & Mac)
+let audioServer = null;
+let audioServerPort = null;
+
+function startAudioServer() {
+  return new Promise((resolve) => {
+    audioServer = http.createServer((req, res) => {
+      try {
+        const parsedUrl = new URL(req.url, `http://127.0.0.1:${audioServerPort || 0}`);
+        const filePath = parsedUrl.searchParams.get('file');
+
+        // CORS headers
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type, Accept');
+
+        if (req.method === 'OPTIONS') {
+          res.writeHead(200);
+          res.end();
+          return;
+        }
+
+        if (!filePath || !fs.existsSync(filePath)) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('File not found');
+          return;
+        }
+
+        const stat = fs.statSync(filePath);
+        const fileSize = stat.size;
+        const ext = path.extname(filePath).toLowerCase();
+
+        const mimeTypes = {
+          '.mp3': 'audio/mpeg',
+          '.m4a': 'audio/mp4',
+          '.mp4': 'audio/mp4',
+          '.aac': 'audio/aac',
+          '.ogg': 'audio/ogg',
+          '.opus': 'audio/ogg',
+          '.flac': 'audio/flac',
+          '.wav': 'audio/wav',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.png': 'image/png',
+          '.webp': 'image/webp'
+        };
+        const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+        const range = req.headers.range;
+        if (range) {
+          const parts = range.replace(/bytes=/, '').split('-');
+          const start = parseInt(parts[0], 10);
+          const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+          if (start >= fileSize) {
+            res.writeHead(416, { 'Content-Range': `bytes */${fileSize}` });
+            res.end();
+            return;
+          }
+
+          const chunksize = (end - start) + 1;
+          const stream = fs.createReadStream(filePath, { start, end });
+          res.writeHead(206, {
+            'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+            'Accept-Ranges': 'bytes',
+            'Content-Length': chunksize,
+            'Content-Type': contentType
+          });
+
+          req.on('close', () => {
+            try { stream.destroy(); } catch (e) {}
+          });
+
+          stream.pipe(res);
+        } else {
+          res.writeHead(200, {
+            'Content-Length': fileSize,
+            'Accept-Ranges': 'bytes',
+            'Content-Type': contentType
+          });
+
+          const stream = fs.createReadStream(filePath);
+          req.on('close', () => {
+            try { stream.destroy(); } catch (e) {}
+          });
+
+          stream.pipe(res);
+        }
+      } catch (err) {
+        console.error('[AudioServer Error]', err);
+        if (!res.headersSent) {
+          res.writeHead(500);
+        }
+        res.end();
+      }
+    });
+
+    audioServer.listen(0, '127.0.0.1', () => {
+      audioServerPort = audioServer.address().port;
+      console.log(`[AudioServer] Local streaming server running on http://127.0.0.1:${audioServerPort}`);
+      resolve(audioServerPort);
+    });
+  });
+}
 
 let mainWindow = null;
 
@@ -97,23 +192,11 @@ if (!gotTheLock) {
     }
   });
 
-  app.whenReady().then(() => {
-    // Protocol handler for playing offline downloaded audio files safely
+  app.whenReady().then(async () => {
     try {
-      protocol.handle('local-audio', (request) => {
-        try {
-          let fileUrl = request.url.replace(/^local-audio:/, 'file:');
-          if (fileUrl.startsWith('file://') && !fileUrl.startsWith('file:///')) {
-            fileUrl = fileUrl.replace('file://', 'file:///');
-          }
-          return net.fetch(fileUrl);
-        } catch (err) {
-          console.error('Failed to handle local-audio protocol:', err);
-          return new Response('File not found', { status: 404 });
-        }
-      });
-    } catch (protErr) {
-      console.warn('Protocol registration warning:', protErr.message);
+      await startAudioServer();
+    } catch (serverErr) {
+      console.error('Failed to start local audio streaming server:', serverErr);
     }
 
     createWindow();
@@ -133,6 +216,12 @@ if (!gotTheLock) {
     });
   });
 }
+
+app.on('will-quit', () => {
+  if (audioServer) {
+    try { audioServer.close(); } catch (e) {}
+  }
+});
 
 app.on('window-all-closed', () => {
   downloaderService.cancelAll();
@@ -239,6 +328,15 @@ ipcMain.handle('get-album-tracks', async (event, { albumId, albumName, albumCove
   }
 });
 
+function cleanTitleForSearch(title) {
+  if (!title) return '';
+  return title
+    .replace(/\s*-\s*(Remaster(ed)?\s*\d*|Live|Radio Edit|Acoustic|Single Version|Bonus Track|Deluxe).*$/i, '')
+    .replace(/\s*\((feat\.|ft\.|with\b|remaster(ed)?|live|radio edit|acoustic|version|mono|stereo).*?\)/gi, '')
+    .replace(/\s*\[(feat\.|ft\.|with\b|remaster(ed)?|live|radio edit|acoustic|version|mono|stereo).*?\]/gi, '')
+    .trim();
+}
+
 const streamAudioCache = new Map();
 
 ipcMain.handle('get-track-audio', async (event, track) => {
@@ -247,11 +345,12 @@ ipcMain.handle('get-track-audio', async (event, track) => {
   }
 
   // 0. Check if track is a local offline downloaded file
-  if (track.isLocal && track.localPath) {
+  if ((track.isLocal || track.localPath) && track.localPath) {
     if (fs.existsSync(track.localPath)) {
+      const localUrl = `http://127.0.0.1:${audioServerPort}/stream-local?file=${encodeURIComponent(track.localPath)}`;
       return {
         success: true,
-        url: pathToFileURL(track.localPath).toString().replace(/^file:/, 'local-audio:'),
+        url: localUrl,
         source: 'local'
       };
     }
@@ -269,16 +368,33 @@ ipcMain.handle('get-track-audio', async (event, track) => {
     return { success: true, url: track.preview_url, source: 'spotify' };
   }
 
-  // 2. Query iTunes Preview Search API (~100ms ultra-fast official 30s preview)
+  // 2. Query iTunes Preview Search API with title cleaning and fallback cascade
   try {
-    const itunesTerm = encodeURIComponent(`${track.name} ${track.artists || ''}`.trim());
-    const itunesRes = await fetch(`https://itunes.apple.com/search?term=${itunesTerm}&entity=song&limit=1`);
-    if (itunesRes.ok) {
-      const data = await itunesRes.json();
-      const previewUrl = data.results?.[0]?.previewUrl;
-      if (previewUrl) {
-        streamAudioCache.set(cacheKey, previewUrl);
-        return { success: true, url: previewUrl, source: 'itunes' };
+    const cleanTitle = cleanTitleForSearch(track.name);
+    const mainArtist = (track.artists || '').split(/[,&/]/)[0].trim();
+
+    const queries = [];
+    if (cleanTitle && mainArtist) queries.push(`${cleanTitle} ${mainArtist}`);
+    if (track.name !== cleanTitle && mainArtist) queries.push(`${track.name} ${mainArtist}`);
+    if (cleanTitle) queries.push(cleanTitle);
+
+    for (const q of queries) {
+      try {
+        const itunesTerm = encodeURIComponent(q.trim());
+        const itunesRes = await fetch(`https://itunes.apple.com/search?term=${itunesTerm}&entity=song&limit=3`);
+        if (itunesRes.ok) {
+          const data = await itunesRes.json();
+          if (data.results && data.results.length > 0) {
+            for (const item of data.results) {
+              if (item.previewUrl) {
+                streamAudioCache.set(cacheKey, item.previewUrl);
+                return { success: true, url: item.previewUrl, source: 'itunes' };
+              }
+            }
+          }
+        }
+      } catch (subErr) {
+        console.warn('[iTunes search query failed]', q, subErr.message);
       }
     }
   } catch (err) {
@@ -287,7 +403,9 @@ ipcMain.handle('get-track-audio', async (event, track) => {
 
   // 3. Fallback to yt-dlp direct audio stream extraction
   try {
-    const ytStreamUrl = await downloaderService.getAudioStreamUrl(track.name, track.artists || '');
+    const cleanTitle = cleanTitleForSearch(track.name);
+    const mainArtist = (track.artists || '').split(/[,&/]/)[0].trim();
+    const ytStreamUrl = await downloaderService.getAudioStreamUrl(cleanTitle || track.name, mainArtist || track.artists || '');
     if (ytStreamUrl) {
       streamAudioCache.set(cacheKey, ytStreamUrl);
       return { success: true, url: ytStreamUrl, source: 'youtube' };
@@ -314,6 +432,7 @@ ipcMain.handle('get-downloaded-tracks', async () => {
     const audioExts = new Set(['.mp3', '.m4a', '.flac', '.opus', '.wav', '.ogg']);
     const entries = fs.readdirSync(downloadDir, { withFileTypes: true });
     const metadataMap = getDownloadedMetadataMap();
+    const possibleCovers = ['.jpg', '.jpeg', '.png', '.webp'];
 
     const tracks = [];
     for (const file of entries) {
@@ -344,16 +463,17 @@ ipcMain.handle('get-downloaded-tracks', async () => {
         for (const cExt of possibleCovers) {
           const companion = path.join(downloadDir, nameWithoutExt + cExt);
           if (fs.existsSync(companion)) {
-            coverUrl = pathToFileURL(companion).toString().replace(/^file:/, 'local-audio:');
+            coverUrl = `http://127.0.0.1:${audioServerPort}/cover-local?file=${encodeURIComponent(companion)}`;
             break;
           }
         }
       }
 
       const sizeMb = (stat.size / (1024 * 1024)).toFixed(1) + ' MB';
+      const fileId = 'local-' + Buffer.from(fullPath).toString('base64').replace(/[/+=]/g, '');
 
       tracks.push({
-        id: `local-${stat.ino || stat.mtimeMs}`,
+        id: fileId,
         name: title,
         artists: artist,
         album: albumName,
@@ -384,18 +504,27 @@ ipcMain.handle('resolve-cover-art', async (event, { artist, title }) => {
       return { success: true, cover_url: map[key].cover_url, album: map[key].album };
     }
 
-    const query = encodeURIComponent(`${artist} ${title}`);
-    const res = await net.fetch(`https://itunes.apple.com/search?term=${query}&entity=song&limit=1`);
-    if (res.ok) {
-      const data = await res.json();
-      if (data.results && data.results.length > 0) {
-        const art = (data.results[0].artworkUrl100 || '').replace('100x100bb', '600x600bb');
-        if (art) {
-          saveDownloadedMetadata(key, {
-            cover_url: art,
-            album: data.results[0].collectionName || 'Descargas Locales'
-          });
-          return { success: true, cover_url: art, album: data.results[0].collectionName };
+    const cleanTitle = cleanTitleForSearch(title);
+    const mainArtist = (artist || '').split(/[,&/]/)[0].trim();
+    const queries = [];
+    if (cleanTitle && mainArtist) queries.push(`${cleanTitle} ${mainArtist}`);
+    if (title !== cleanTitle && mainArtist) queries.push(`${title} ${artist}`);
+    if (cleanTitle) queries.push(cleanTitle);
+
+    for (const q of queries) {
+      const itunesQuery = encodeURIComponent(q.trim());
+      const res = await fetch(`https://itunes.apple.com/search?term=${itunesQuery}&entity=song&limit=1`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          const art = (data.results[0].artworkUrl100 || '').replace('100x100bb', '600x600bb');
+          if (art) {
+            saveDownloadedMetadata(key, {
+              cover_url: art,
+              album: data.results[0].collectionName || 'Descargas Locales'
+            });
+            return { success: true, cover_url: art, album: data.results[0].collectionName };
+          }
         }
       }
     }
