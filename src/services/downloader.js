@@ -1,6 +1,7 @@
 const { spawn, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const licenseService = require('./licenseService');
 
 class DownloaderService {
   constructor() {
@@ -8,6 +9,10 @@ class DownloaderService {
     this.queue = [];
     this.runningCount = 0;
     this.maxConcurrency = 3;
+    this.delayBetweenTracksMs = 0;
+    this.isRemotePaused = false;
+    this.completedCount = 0;
+    this.lastTelemetrySent = 0;
     this.isCancelled = false;
     this.onProgressCallback = null;
 
@@ -164,8 +169,87 @@ class DownloaderService {
     this.processQueue();
   }
 
+  async sendQueueTelemetry(currentTrack = null, currentProgress = 0, currentSpeed = 0) {
+    try {
+      const now = Date.now();
+      // Throttle telemetry transmissions to max once every 1.5 seconds unless state changed
+      if (now - this.lastTelemetrySent < 1500 && !currentTrack) return;
+      this.lastTelemetrySent = now;
+
+      const machineId = licenseService.getMachineId ? licenseService.getMachineId() : 'DESKTOP-DEV';
+      let clientName = 'SpotMusic Desktop';
+      let token = '';
+
+      try {
+        const currentLic = await licenseService.getCurrentLicense(false);
+        if (currentLic) {
+          if (currentLic.token) token = currentLic.token;
+          if (currentLic.clientName) clientName = currentLic.clientName;
+        }
+      } catch (e) {}
+
+      const endpoints = [
+        'https://license-eight-ruby.vercel.app/api/telemetry/queue',
+        'https://license-dwtlltjib-lamb-dev.vercel.app/api/telemetry/queue',
+        'http://localhost:3000/api/telemetry/queue'
+      ];
+
+      const payload = {
+        deviceId: machineId,
+        token: token,
+        clientName: clientName,
+        appName: 'SpotMusic Desktop',
+        platform: process.platform === 'darwin' ? 'mac' : 'windows',
+        queueCount: this.queue.length,
+        activeDownloads: this.runningCount,
+        completedCount: this.completedCount || 0,
+        totalRequested: (this.completedCount || 0) + this.queue.length + this.runningCount,
+        currentTrack: currentTrack ? {
+          name: currentTrack.name || '',
+          artist: currentTrack.artists || '',
+          progress: currentProgress || 0,
+          speedKbps: currentSpeed || 0
+        } : undefined,
+        status: this.isCancelled || this.isRemotePaused ? 'paused' : (this.queue.length > 0 || this.runningCount > 0 ? 'downloading' : 'idle')
+      };
+
+      for (const endpoint of endpoints) {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 2000);
+          const res = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+            signal: controller.signal
+          });
+          clearTimeout(timer);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.success && data.config) {
+              if (typeof data.config.maxConcurrency === 'number' && data.config.maxConcurrency > 0) {
+                this.maxConcurrency = data.config.maxConcurrency;
+              }
+              if (typeof data.config.delayBetweenTracksMs === 'number') {
+                this.delayBetweenTracksMs = data.config.delayBetweenTracksMs;
+              }
+              if (typeof data.config.paused === 'boolean') {
+                const wasPaused = this.isRemotePaused;
+                this.isRemotePaused = data.config.paused;
+                if (wasPaused && !this.isRemotePaused) {
+                  this.processQueue();
+                }
+              }
+            }
+            break;
+          }
+        } catch (e) {}
+      }
+    } catch (err) {}
+  }
+
   processQueue() {
-    if (this.isCancelled) return;
+    if (this.isCancelled || this.isRemotePaused) return;
 
     // Rate limiter: Guarantee < 180 requests per rolling minute to strictly prevent blocking
     const now = Date.now();
@@ -176,17 +260,35 @@ class DownloaderService {
       return;
     }
 
-    while (this.runningCount < this.maxConcurrency && this.queue.length > 0) {
+    // Report active queue telemetry to KeyForge Pro
+    this.sendQueueTelemetry();
+
+    while (this.runningCount < this.maxConcurrency && this.queue.length > 0 && !this.isRemotePaused) {
       const item = this.queue.shift();
       if (!item) break;
 
       this.runningCount++;
       this.rateHistory.push(Date.now());
-      this.downloadTrack(item.track, item.downloadDir, item.formatKey)
-        .finally(() => {
-          this.runningCount--;
-          this.processQueue();
-        });
+
+      const launch = () => {
+        this.downloadTrack(item.track, item.downloadDir, item.formatKey)
+          .finally(() => {
+            this.runningCount--;
+            this.completedCount = (this.completedCount || 0) + 1;
+            this.sendQueueTelemetry();
+            if (this.delayBetweenTracksMs > 0) {
+              setTimeout(() => this.processQueue(), this.delayBetweenTracksMs);
+            } else {
+              this.processQueue();
+            }
+          });
+      };
+
+      if (this.delayBetweenTracksMs > 0 && this.runningCount > 1) {
+        setTimeout(launch, this.delayBetweenTracksMs);
+      } else {
+        launch();
+      }
     }
   }
 
@@ -289,6 +391,7 @@ class DownloaderService {
             eta: eta,
             message: `Descargando: ${percent.toFixed(0)}% (${speed})`
           });
+          this.sendQueueTelemetry(track, Math.round(percent), parseFloat(speed) || 0);
           return;
         }
 
