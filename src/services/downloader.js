@@ -326,12 +326,6 @@ class DownloaderService {
         '--output', outputPattern
       ];
 
-      if (track.duration_ms && track.duration_ms > 45000) {
-        const maxDur = Math.round((track.duration_ms / 1000) * 1.25);
-        const minDur = Math.round((track.duration_ms / 1000) * 0.75);
-        args.push('--match-filter', `duration <= ${maxDur} & duration >= ${minDur}`);
-      }
-
       if (this.ffmpegPath) {
         args.push('--ffmpeg-location', this.ffmpegPath);
       }
