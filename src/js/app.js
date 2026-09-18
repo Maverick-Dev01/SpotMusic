@@ -665,9 +665,30 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       const playBtn = tr.querySelector('.btn-play-track');
       playBtn.addEventListener('click', () => playAudio(track, playBtn));
+
+      // Speculative pre-fetch on hover for 0ms instant playback
+      let hoverPrefetchTimer = null;
+      tr.addEventListener('mouseenter', () => {
+        hoverPrefetchTimer = setTimeout(() => {
+          if (window.snapAPI?.getTrackAudio && (!state.currentPlayingTrack || state.currentPlayingTrack.id !== track.id)) {
+            window.snapAPI.getTrackAudio(track).catch(() => {});
+          }
+        }, 120);
+      });
+      tr.addEventListener('mouseleave', () => {
+        if (hoverPrefetchTimer) clearTimeout(hoverPrefetchTimer);
+      });
+
       tr.querySelector('.btn-download-single').addEventListener('click', () => triggerBatchDownload([track]));
       catalogTracksTbody.appendChild(tr);
     });
+
+    // Prefetch top track in background so first play is instant
+    if (data.tracks && data.tracks.length > 0 && window.snapAPI?.getTrackAudio) {
+      setTimeout(() => {
+        window.snapAPI.getTrackAudio(data.tracks[0]).catch(() => {});
+      }, 50);
+    }
 
     // Render Albums Tab
     catalogAlbumsGrid.innerHTML = '';

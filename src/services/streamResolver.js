@@ -261,14 +261,18 @@ class StreamResolver {
     }
 
     const promise = (async () => {
-      // Tier 1: JioSaavn (Ultra-fast 250ms, Full 320kbps CDNs - strictly matched by artist & duration)
-      const jioResult = await this.resolveJioSaavn(title, artist, durationMs);
+      // Concurrently dispatch Tier 1 (JioSaavn) and Tier 2 (YouTube) so YouTube does not wait
+      const jioPromise = this.resolveJioSaavn(title, artist, durationMs).catch(() => null);
+      const ytPromise = this.resolveYouTube(title, artist, durationMs).catch(() => null);
+
+      // Fast-path: Check JioSaavn result first (resolves in ~250ms)
+      const jioResult = await jioPromise;
       if (jioResult && jioResult.audioUrl) {
         return jioResult;
       }
 
-      // Tier 2: YouTube direct stream extraction (Official Studio Audio, accurate length)
-      const ytResult = await this.resolveYouTube(title, artist, durationMs);
+      // If JioSaavn didn't match, YouTube was already running simultaneously!
+      const ytResult = await ytPromise;
       if (ytResult && ytResult.audioUrl) {
         return ytResult;
       }

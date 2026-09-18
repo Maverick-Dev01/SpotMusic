@@ -193,7 +193,7 @@ class SpotifyService {
                 duration_ms: t.duration || t.duration_ms || 0,
                 duration_str: this.formatDuration(t.duration || t.duration_ms),
                 cover_url: t.thumbnail || coverUrl,
-                preview_url: t.audioPreview?.url || t.preview_url || null,
+                preview_url: null, // Always resolve full audio stream
                 spotify_url: t.uri ? `https://open.spotify.com/track/${t.uri.split(':')[2]}` : ''
               };
             });
@@ -275,7 +275,7 @@ class SpotifyService {
         duration_ms: t.duration_ms || 0,
         duration_str: this.formatDuration(t.duration_ms),
         cover_url: (t.album && t.album.images && t.album.images[0]?.url) || coverUrl,
-        preview_url: t.preview_url || null,
+        preview_url: null, // Always resolve full audio stream
         spotify_url: t.external_urls?.spotify || ''
       });
     }
@@ -393,7 +393,7 @@ class SpotifyService {
         duration_ms: t.trackTimeMillis || 0,
         duration_str: this.formatDuration(t.trackTimeMillis),
         cover_url: t.artworkUrl100 ? t.artworkUrl100.replace('100x100bb', '600x600bb') : null,
-        preview_url: t.previewUrl || null,
+        preview_url: null, // Always resolve full audio stream
         spotify_url: ''
       }));
 
@@ -440,7 +440,7 @@ class SpotifyService {
             duration_ms: t.trackTimeMillis || 0,
             duration_str: this.formatDuration(t.trackTimeMillis),
             cover_url: cover,
-            preview_url: t.previewUrl || null,
+            preview_url: null, // Always resolve full audio stream
             track_number: t.trackNumber || (idx + 1)
           }));
 

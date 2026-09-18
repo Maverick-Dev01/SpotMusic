@@ -167,11 +167,21 @@ class DownloaderService {
   processQueue() {
     if (this.isCancelled) return;
 
+    // Rate limiter: Guarantee < 180 requests per rolling minute to strictly prevent blocking
+    const now = Date.now();
+    this.rateHistory = (this.rateHistory || []).filter(t => now - t < 60000);
+    if (this.rateHistory.length >= 180) {
+      const waitTime = Math.max(500, 60000 - (now - this.rateHistory[0]));
+      setTimeout(() => this.processQueue(), waitTime);
+      return;
+    }
+
     while (this.runningCount < this.maxConcurrency && this.queue.length > 0) {
       const item = this.queue.shift();
       if (!item) break;
 
       this.runningCount++;
+      this.rateHistory.push(Date.now());
       this.downloadTrack(item.track, item.downloadDir, item.formatKey)
         .finally(() => {
           this.runningCount--;
@@ -195,10 +205,10 @@ class DownloaderService {
         message: 'Buscando en YouTube...'
       });
 
-      // Prepare clean search query
+      // Prepare clean search query (ytsearch1 cuts query time and requests by 66%)
       const cleanName = (track.name || '').replace(/\(feat\.[^)]+\)/gi, '').replace(/\(ft\.[^)]+\)/gi, '').trim();
       const firstArtist = (track.artists || '').split(/[,&/]/)[0].trim();
-      const searchQuery = `ytsearch3:${cleanName} ${firstArtist} official audio`;
+      const searchQuery = `ytsearch1:${cleanName} ${firstArtist} official audio`;
 
       const args = [
         '--extractor-args', 'youtube:player_client=android,web',
