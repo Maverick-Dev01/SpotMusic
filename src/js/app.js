@@ -1028,6 +1028,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     }
     playerTrackTitle.textContent = track.name;
     playerTrackArtist.textContent = `${track.artists} (Cargando audio...)`;
+    if (playerTimeCurrent) playerTimeCurrent.textContent = '0:00';
+    if (playerTimeTotal) playerTimeTotal.textContent = track.duration_str || '--:--';
 
     try {
       // Resolve audio using multi-tier resolver (Local HTTP -> Spotify -> iTunes -> yt-dlp)
