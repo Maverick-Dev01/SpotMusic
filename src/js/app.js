@@ -23,6 +23,26 @@ document.addEventListener('DOMContentLoaded', async () => {
   const audio = new Audio();
   audio.volume = 0.8;
 
+  // Security Hardening: Anti-XSS Content Escaper (Point 15)
+  function escapeHtml(value) {
+    if (value === null || value === undefined) return '';
+    return String(value)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function sanitizeUrl(url) {
+    if (!url || typeof url !== 'string') return '';
+    const clean = url.trim();
+    if (clean.startsWith('https://') || clean.startsWith('http://') || clean.startsWith('data:image/')) {
+      return escapeHtml(clean);
+    }
+    return '';
+  }
+
   // DOM Elements - Navigation & Views
   const navSearch = document.getElementById('nav-search');
   const navDownloads = document.getElementById('nav-downloads');
@@ -577,10 +597,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       item.className = 'suggestion-item';
 
       item.innerHTML = `
-        <img class="suggestion-thumb" src="${track.cover_url || ''}" alt="Cover" onerror="this.style.display='none'" />
+        <img class="suggestion-thumb" src="${sanitizeUrl(track.cover_url)}" alt="Cover" onerror="this.style.display='none'" />
         <div class="suggestion-info">
-          <span class="suggestion-title" title="${track.name}">${track.name}</span>
-          <span class="suggestion-artist" title="${track.artists}">${track.artists}</span>
+          <span class="suggestion-title" title="${escapeHtml(track.name)}">${escapeHtml(track.name)}</span>
+          <span class="suggestion-artist" title="${escapeHtml(track.artists)}">${escapeHtml(track.artists)}</span>
         </div>
         <div class="suggestion-actions">
           <button class="btn-suggestion-play" title="Reproducir canción completa">
@@ -641,23 +661,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       tr.innerHTML = `
         <td class="col-num">${idx + 1}</td>
         <td>
-          <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir canción completa">
+          <button class="btn-play-row btn-play-track" data-id="${escapeHtml(track.id)}" title="Reproducir canción completa">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           </button>
         </td>
         <td>
           <div class="col-title">
-            <img class="track-thumb" src="${track.cover_url || ''}" alt="Cover" onerror="this.style.display='none'" />
+            <img class="track-thumb" src="${sanitizeUrl(track.cover_url)}" alt="Cover" onerror="this.style.display='none'" />
             <div class="track-info">
-              <span class="track-name" title="${track.name}">${track.name}</span>
-              <span class="track-artist" title="${track.artists}">${track.artists}</span>
+              <span class="track-name" title="${escapeHtml(track.name)}">${escapeHtml(track.name)}</span>
+              <span class="track-artist" title="${escapeHtml(track.artists)}">${escapeHtml(track.artists)}</span>
             </div>
           </div>
         </td>
-        <td class="col-album">${track.album || '-'}</td>
-        <td class="col-time">${track.duration_str}</td>
+        <td class="col-album">${escapeHtml(track.album || '-')}</td>
+        <td class="col-time">${escapeHtml(track.duration_str)}</td>
         <td style="text-align: right;">
-          <button class="btn btn-primary btn-sm btn-download-single" data-id="${track.id}">
+          <button class="btn btn-primary btn-sm btn-download-single" data-id="${escapeHtml(track.id)}">
             Descargar
           </button>
         </td>
@@ -697,10 +717,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       card.className = 'media-card';
       card.innerHTML = `
         <div class="media-card-img-wrap">
-          <img class="media-card-img" src="${album.cover_url || ''}" alt="${album.name}" />
+          <img class="media-card-img" src="${sanitizeUrl(album.cover_url)}" alt="${escapeHtml(album.name)}" />
         </div>
-        <div class="media-card-title" title="${album.name}">${album.name}</div>
-        <div class="media-card-desc">${album.artists} • ${album.total_tracks} pistas</div>
+        <div class="media-card-title" title="${escapeHtml(album.name)}">${escapeHtml(album.name)}</div>
+        <div class="media-card-desc">${escapeHtml(album.artists)} • ${Number(album.total_tracks) || 0} pistas</div>
       `;
       card.addEventListener('click', async () => {
         try {
@@ -739,10 +759,10 @@ document.addEventListener('DOMContentLoaded', async () => {
       card.className = 'media-card';
       card.innerHTML = `
         <div class="media-card-img-wrap">
-          <img class="media-card-img" src="${playlist.cover_url || ''}" alt="${playlist.name}" />
+          <img class="media-card-img" src="${sanitizeUrl(playlist.cover_url)}" alt="${escapeHtml(playlist.name)}" />
         </div>
-        <div class="media-card-title" title="${playlist.name}">${playlist.name}</div>
-        <div class="media-card-desc">Por ${playlist.owner} • ${playlist.total_tracks} pistas</div>
+        <div class="media-card-title" title="${escapeHtml(playlist.name)}">${escapeHtml(playlist.name)}</div>
+        <div class="media-card-desc">Por ${escapeHtml(playlist.owner)} • ${Number(playlist.total_tracks) || 0} pistas</div>
       `;
       card.addEventListener('click', () => {
         inputPlaylistUrl.value = playlist.spotify_url;
@@ -914,23 +934,23 @@ document.addEventListener('DOMContentLoaded', async () => {
       tr.innerHTML = `
         <td class="col-num">${index + 1}</td>
         <td class="col-check">
-          <input type="checkbox" class="custom-checkbox track-checkbox" data-id="${track.id}" ${isChecked ? 'checked' : ''} />
+          <input type="checkbox" class="custom-checkbox track-checkbox" data-id="${escapeHtml(track.id)}" ${isChecked ? 'checked' : ''} />
         </td>
         <td>
           <div class="col-title">
-            <button class="btn-play-row btn-play-track" data-id="${track.id}" title="Reproducir canción completa">
+            <button class="btn-play-row btn-play-track" data-id="${escapeHtml(track.id)}" title="Reproducir canción completa">
               <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
             </button>
-            <img class="track-thumb" src="${track.cover_url || ''}" alt="Cover" onerror="this.style.display='none'" />
+            <img class="track-thumb" src="${sanitizeUrl(track.cover_url)}" alt="Cover" onerror="this.style.display='none'" />
             <div class="track-info">
-              <span class="track-name" title="${track.name}">${track.name}</span>
-              <span class="track-artist" title="${track.artists}">${track.artists}</span>
+              <span class="track-name" title="${escapeHtml(track.name)}">${escapeHtml(track.name)}</span>
+              <span class="track-artist" title="${escapeHtml(track.artists)}">${escapeHtml(track.artists)}</span>
             </div>
           </div>
         </td>
-        <td class="col-album" title="${track.album || ''}">${track.album || '-'}</td>
-        <td class="col-time">${track.duration_str || '0:00'}</td>
-        <td class="col-status" id="status-cell-${track.id}">
+        <td class="col-album" title="${escapeHtml(track.album || '')}">${escapeHtml(track.album || '-')}</td>
+        <td class="col-time">${escapeHtml(track.duration_str || '0:00')}</td>
+        <td class="col-status" id="status-cell-${escapeHtml(track.id)}">
           ${getTrackStatusBadgeHTML(downloadState)}
         </td>
       `;

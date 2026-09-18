@@ -62,14 +62,6 @@ class LicenseService {
     return this.cachedMachineId;
   }
 
-  generateToken(payload, customSecret = null) {
-    const secret = customSecret || this.masterSecret;
-    const jsonStr = JSON.stringify(payload);
-    const payloadB64 = Buffer.from(jsonStr, 'utf8').toString('base64url');
-    const signature = crypto.createHmac('sha256', secret).update(payloadB64).digest('hex');
-    return `${payloadB64}.${signature}`;
-  }
-
   verifyToken(token, customSecret = null) {
     if (!token || typeof token !== 'string' || !token.includes('.')) {
       return { valid: false, error: 'Formato de token inválido' };
