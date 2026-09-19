@@ -17,7 +17,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     searchQuery: '',
     downloadFilter: '',
     downloadedTracks: [],
-    selectedDownloads: new Set()
+    selectedDownloads: new Set(),
+    pendingSpotifyImport: ''
   };
 
   // Audio Player Instance
@@ -28,7 +29,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     await window.snapAPI.disconnectSpotify();
     showToast('Cuenta Spotify desvinculada.');
   });
-  window.snapAPI.onSpotifyConnected(result => showToast(result.success ? 'Cuenta vinculada. Ya puedes volver a importar tu playlist.' : result.error, !result.success));
+  window.snapAPI.onSpotifyConnected(result => {
+    showToast(result.success ? 'Cuenta vinculada.' : result.error, !result.success);
+    if (result.success && state.pendingSpotifyImport) {
+      const pending = state.pendingSpotifyImport;
+      state.pendingSpotifyImport = '';
+      if (inputPlaylistUrl.value.trim() === pending) handleSearch();
+    }
+  });
 
   // Security Hardening: Anti-XSS Content Escaper (Point 15)
   function escapeHtml(value) {
@@ -470,6 +478,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (isUrl) {
         // Load Playlist / Album / Track directly
         const response = await window.snapAPI.fetchPlaylist(query);
+        if (response.requiresSpotifyLogin) state.pendingSpotifyImport = query;
         if (response.success && response.data) {
           state.playlist = response.data;
           state.selectedIds = new Set(response.data.tracks.map((t) => t.id));

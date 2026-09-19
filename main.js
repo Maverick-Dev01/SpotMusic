@@ -315,11 +315,17 @@ ipcMain.handle('test-spotify-credentials', async (event, { clientId, clientSecre
 ipcMain.handle('fetch-playlist', async (event, url) => {
   try {
     const settings = settingsService.getSettings();
+    const info = spotifyService.extractSpotifyInfo(url);
+    const userToken = await spotifyAuth.accessToken();
+    if (info?.type === 'playlist' && !userToken) {
+      await spotifyAuth.connect(settings.spotifyClientId);
+      return { success: false, requiresSpotifyLogin: true, error: 'Inicia sesión en la ventana de Spotify. Al regresar se continuará la importación.' };
+    }
     const playlist = await spotifyService.getPlaylist(
       url,
       settings.spotifyClientId,
       settings.spotifyClientSecret,
-      await spotifyAuth.accessToken()
+      userToken
     );
     return { success: true, data: playlist };
   } catch (err) {

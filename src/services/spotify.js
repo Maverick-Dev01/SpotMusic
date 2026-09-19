@@ -64,6 +64,14 @@ class SpotifyService {
               resolve(body);
             }
           } else {
+            if (res.statusCode === 403) {
+              reject(new Error('Spotify rechazó el acceso (403). El administrador debe autorizar esta cuenta en Spotify Developer si la aplicación está en modo desarrollo. Comprueba también que puedas acceder a la playlist con la cuenta vinculada.'));
+              return;
+            }
+            if (res.statusCode === 401) {
+              reject(new Error('La sesión de Spotify venció (401). Desvincula y vuelve a vincular tu cuenta en Ajustes.'));
+              return;
+            }
             let parsedErr;
             try {
               parsedErr = JSON.parse(body);
