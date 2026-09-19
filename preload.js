@@ -49,5 +49,8 @@ contextBridge.exposeInMainWorld('snapAPI', {
   },
   minimizeWindow: () => ipcRenderer.send('window-minimize'),
   maximizeWindow: () => ipcRenderer.send('window-maximize'),
-  closeWindow: () => ipcRenderer.send('window-close')
+  closeWindow: () => ipcRenderer.send('window-close'),
+  connectSpotify: () => ipcRenderer.invoke('spotify-connect'),
+  disconnectSpotify: () => ipcRenderer.invoke('spotify-disconnect'),
+  onSpotifyConnected: callback => ipcRenderer.on('spotify-connected', (_event, result) => callback(result))
 });

@@ -10,7 +10,7 @@ class SettingsService {
 
     this.defaultSettings = {
       spotifyClientId: 'e0e9be08cc8f4815a6b726ee648016f2',
-      spotifyClientSecret: 'fbed0d551e7e410181fe9bf80bb16dcc',
+      spotifyClientSecret: '',
       downloadDir: defaultDownloads,
       defaultFormat: 'mp3-320', // mp3-320, mp3-192, flac, m4a, opus, wav
       concurrency: 3, // 1 to 5 parallel downloads

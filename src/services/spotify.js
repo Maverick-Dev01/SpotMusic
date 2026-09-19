@@ -206,7 +206,8 @@ class SpotifyService {
               cover_url: coverUrl,
               owner: (entity.authors && entity.authors[0]?.name) || 'Spotify',
               total_tracks: tracks.length,
-              tracks: tracks
+              tracks: tracks,
+              partial: type !== 'track'
             });
           } catch (err) {
             reject(new Error('Error al procesar el listado de Spotify: ' + err.message));
@@ -220,13 +221,22 @@ class SpotifyService {
     });
   }
 
-  async getPlaylist(inputUrl, clientId = '', clientSecret = '') {
+  async getPlaylist(inputUrl, clientId = '', clientSecret = '', userToken = '') {
     const info = this.extractSpotifyInfo(inputUrl);
     if (!info) {
       throw new Error('El enlace ingresado no es válido. Debe ser un enlace de Spotify (ej: https://open.spotify.com/playlist/...)');
     }
 
-    // Try embed extractor first (instant, works for public playlists without rate limit or 404 restrictions)
+    if (info.type === 'playlist' && userToken) return this.fetchPlaylistWithApi(info.id, userToken);
+    // The public embed is only a partial view. Prefer paginated API access.
+    if (info.type === 'playlist' && clientId?.trim() && clientSecret?.trim()) {
+      try {
+        const token = await this.getClientCredentialsToken(clientId, clientSecret);
+        return await this.fetchPlaylistWithApi(info.id, token);
+      } catch (error) {
+        console.warn('Spotify API access unavailable:', error.message);
+      }
+    }
     try {
       return await this.fetchFromEmbed(info.type, info.id);
     } catch (embedErr) {
@@ -261,10 +271,22 @@ class SpotifyService {
     const playlist = await this.makeHttpRequest(playlistOptions);
     const coverUrl = playlist.images && playlist.images.length > 0 ? playlist.images[0].url : null;
     let tracks = [];
-    let items = (playlist.tracks && playlist.tracks.items) || [];
+    const items = [];
+    let offset = 0;
+    let total = Number(playlist.items?.total ?? playlist.tracks?.total ?? 0);
+    do {
+      const page = await this.makeHttpRequest({ ...playlistOptions,
+        path: `/v1/playlists/${playlistId}/items?limit=50&offset=${offset}` });
+      if (!Array.isArray(page.items)) throw new Error('Spotify devolvió una página de canciones inválida.');
+      items.push(...page.items);
+      total = Number(page.total ?? total);
+      offset += page.items.length;
+      if (!page.next) break;
+      if (!page.items.length) throw new Error('Spotify interrumpió la importación. Intenta nuevamente.');
+    } while (true);
 
     for (const item of items) {
-      const t = item.track;
+      const t = item.item || item.track;
       if (!t || !t.name) continue;
       const artists = (t.artists || []).map(a => a.name).join(', ');
       tracks.push({
@@ -286,8 +308,9 @@ class SpotifyService {
       description: playlist.description || '',
       cover_url: coverUrl,
       owner: (playlist.owner && playlist.owner.display_name) || 'Spotify',
-      total_tracks: playlist.tracks ? playlist.tracks.total : tracks.length,
-      tracks: tracks
+      total_tracks: total || tracks.length,
+      tracks: tracks,
+      partial: total > items.length
     };
   }
 
@@ -305,6 +328,7 @@ class SpotifyService {
       return cached.data;
     }
 
+    let spotifyResults;
     // 1. Try Spotify Official API if credentials are provided
     if (clientId && clientSecret) {
       try {
@@ -366,9 +390,11 @@ class SpotifyService {
           const firstKey = this.searchCache.keys().next().value;
           this.searchCache.delete(firstKey);
         }
-        this.searchCache.set(cacheKey, { timestamp: Date.now(), data: resultData });
-
-        return resultData;
+        if (tracks.length >= 10) {
+          this.searchCache.set(cacheKey, { timestamp: Date.now(), data: resultData });
+          return resultData;
+        }
+        spotifyResults = resultData;
       } catch (err) {
         console.warn('Spotify catalog search error, falling back to public iTunes search:', err.message);
       }
@@ -397,7 +423,8 @@ class SpotifyService {
         spotify_url: ''
       }));
 
-      const tracks = allTracks.slice(0, 35);
+      const tracks = [...(spotifyResults?.tracks || []), ...allTracks.slice(0, 35)].filter((track, index, all) =>
+        all.findIndex(other => `${other.name}|${other.artists}`.toLowerCase() === `${track.name}|${track.artists}`.toLowerCase()) === index);
       const recommendations = allTracks.slice(35, 50);
 
       const albums = (albumData.results || []).map((a, idx) => ({
@@ -413,7 +440,7 @@ class SpotifyService {
       return { tracks, albums, playlists: [], recommendations };
     } catch (err) {
       console.error('All catalog search providers failed:', err);
-      return { tracks: [], albums: [], playlists: [], recommendations: [] };
+      return spotifyResults || { tracks: [], albums: [], playlists: [], recommendations: [] };
     }
   }
 

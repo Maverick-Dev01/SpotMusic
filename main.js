@@ -6,6 +6,7 @@ const http = require('http');
 const { pathToFileURL } = require('url');
 const settingsService = require('./src/services/settings');
 const spotifyService = require('./src/services/spotify');
+const spotifyAuth = require('./src/services/spotifyAuth');
 const downloaderService = require('./src/services/downloader');
 const licenseService = require('./src/services/licenseService');
 const updaterService = require('./src/services/updater');
@@ -215,7 +216,9 @@ const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   app.quit();
 } else {
-  app.on('second-instance', () => {
+  app.on('second-instance', (_event, argv) => {
+    const callback = argv.find(value => value.startsWith('spotmusic-login://callback'));
+    if (callback) handleSpotifyCallback(callback);
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -223,6 +226,7 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
+    app.setAsDefaultProtocolClient('spotmusic-login');
     try {
       await startAudioServer();
     } catch (serverErr) {
@@ -256,6 +260,21 @@ app.on('window-all-closed', () => {
 });
 
 // IPC Handlers
+async function handleSpotifyCallback(url) {
+  try {
+    await spotifyAuth.callback(url);
+    mainWindow?.webContents.send('spotify-connected', { success: true });
+  } catch (error) {
+    mainWindow?.webContents.send('spotify-connected', { success: false, error: error.message });
+  }
+  mainWindow?.focus();
+}
+app.on('open-url', (event, url) => { event.preventDefault(); if (url.startsWith('spotmusic-login://callback')) handleSpotifyCallback(url); });
+ipcMain.handle('spotify-connect', async () => {
+  await spotifyAuth.connect(settingsService.getSettings().spotifyClientId);
+  return { success: true };
+});
+ipcMain.handle('spotify-disconnect', () => { spotifyAuth.disconnect(); return { success: true }; });
 
 ipcMain.handle('get-settings', async () => {
   return settingsService.getSettings();
@@ -299,7 +318,8 @@ ipcMain.handle('fetch-playlist', async (event, url) => {
     const playlist = await spotifyService.getPlaylist(
       url,
       settings.spotifyClientId,
-      settings.spotifyClientSecret
+      settings.spotifyClientSecret,
+      await spotifyAuth.accessToken()
     );
     return { success: true, data: playlist };
   } catch (err) {
@@ -545,6 +565,12 @@ ipcMain.handle('show-item-in-folder', async (event, fullPath) => {
 ipcMain.handle('delete-downloaded-track', async (event, fullPath) => {
   try {
     if (fullPath && fs.existsSync(fullPath)) {
+      const root = fs.realpathSync(settingsService.getSettings().downloadDir);
+      const resolved = fs.realpathSync(fullPath);
+      const relative = path.relative(root, resolved);
+      if (!relative || relative.startsWith('..') || path.isAbsolute(relative) || !fs.statSync(resolved).isFile()) {
+        return { success: false, error: 'El archivo no pertenece a la biblioteca de descargas.' };
+      }
       fs.unlinkSync(fullPath);
       return { success: true };
     }

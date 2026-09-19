@@ -1,6 +1,6 @@
 {
   "name": "spotmusic",
-  "version": "1.0.9",
+  "version": "1.0.10",
   "description": "SpotMusic - Spotify Playlist, Album & Track Downloader with Audio Preview and Licensing",
   "main": "main.js",
   "repository": {
@@ -14,7 +14,7 @@
     "build:win": "electron-builder --win",
     "build": "electron-builder -mw",
     "package": "npm run setup:binaries && electron-builder -mw",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node --test tests/*.cjs"
   },
   "build": {
     "appId": "com.spotmusic.app",
@@ -88,6 +88,14 @@
       "preload.js",
       "src/**/*",
       "package.json"
+    ],
+    "protocols": [
+      {
+        "name": "Spotify login",
+        "schemes": [
+          "spotmusic-login"
+        ]
+      }
     ]
   },
   "keywords": [

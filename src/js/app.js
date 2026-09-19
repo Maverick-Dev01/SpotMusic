@@ -16,12 +16,19 @@ document.addEventListener('DOMContentLoaded', async () => {
     lastCatalogTab: 'tab-tracks',
     searchQuery: '',
     downloadFilter: '',
-    downloadedTracks: []
+    downloadedTracks: [],
+    selectedDownloads: new Set()
   };
 
   // Audio Player Instance
   const audio = new Audio();
   audio.volume = 0.8;
+  document.getElementById('btn-connect-spotify').addEventListener('click', () => window.snapAPI.connectSpotify().catch(error => showToast(error.message, true)));
+  document.getElementById('btn-disconnect-spotify').addEventListener('click', async () => {
+    await window.snapAPI.disconnectSpotify();
+    showToast('Cuenta Spotify desvinculada.');
+  });
+  window.snapAPI.onSpotifyConnected(result => showToast(result.success ? 'Cuenta vinculada. Ya puedes volver a importar tu playlist.' : result.error, !result.success));
 
   // Security Hardening: Anti-XSS Content Escaper (Point 15)
   function escapeHtml(value) {
@@ -866,7 +873,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     heroTitle.textContent = playlist.name || 'Playlist de Spotify';
     heroDesc.textContent = playlist.description || '';
     heroOwner.textContent = playlist.owner || 'Spotify';
-    heroTrackCount.textContent = `${playlist.tracks.length} canciones`;
+    heroTrackCount.textContent = `${playlist.tracks.length} canciones${playlist.partial ? ' · vista parcial' : ''}`;
+    if (playlist.partial) showToast('Spotify devolvió una vista parcial. El acceso a la API debe estar autorizado para importar la lista completa.', true);
 
     if (playlist.cover_url) {
       heroCover.src = playlist.cover_url;
@@ -1004,9 +1012,41 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // 7. Audio Player Engine
   let currentPlaySeq = 0;
+  const playbackQueue = new window.PlaybackQueue();
+  function advancePlayback(direction, manual = true) {
+    if (direction < 0 && audio.currentTime > 3) { audio.currentTime = 0; return; }
+    const next = direction < 0 ? playbackQueue.previous() : playbackQueue.next(manual);
+    if (!next) return;
+    if (state.currentPlayingTrack?.id === next.id) {
+      audio.currentTime = 0;
+      audio.play().catch(error => showToast(error.message, true));
+    } else playAudio(next, null, true);
+  }
+  document.getElementById('btn-player-prev').addEventListener('click', () => advancePlayback(-1));
+  document.getElementById('btn-player-next').addEventListener('click', () => advancePlayback(1));
+  document.getElementById('btn-player-shuffle').addEventListener('click', event => {
+    playbackQueue.shuffle = !playbackQueue.shuffle;
+    event.currentTarget.setAttribute('aria-pressed', String(playbackQueue.shuffle));
+    event.currentTarget.style.color = playbackQueue.shuffle ? 'var(--accent)' : '';
+  });
+  document.getElementById('btn-player-repeat').addEventListener('click', event => {
+    playbackQueue.repeat = { off: 'all', all: 'one', one: 'off' }[playbackQueue.repeat];
+    const label = { off: 'Repetición desactivada', all: 'Repetir cola', one: 'Repetir canción' }[playbackQueue.repeat];
+    event.currentTarget.title = label;
+    event.currentTarget.setAttribute('aria-label', label);
+    event.currentTarget.setAttribute('aria-pressed', String(playbackQueue.repeat !== 'off'));
+    event.currentTarget.textContent = playbackQueue.repeat === 'one' ? '↻¹' : '↻';
+    event.currentTarget.style.color = playbackQueue.repeat !== 'off' ? 'var(--accent)' : '';
+  });
 
-  async function playAudio(track, triggerBtn = null) {
+  async function playAudio(track, triggerBtn = null, fromQueue = false) {
     if (!track) return;
+    if (!fromQueue) {
+      const context = track.isLocal ? state.downloadedTracks
+        : state.playlist?.tracks?.some(item => item.id === track.id) ? state.playlist.tracks
+        : state.catalogResults?.tracks || [track];
+      playbackQueue.set(context.some(item => item.id === track.id) ? context : [track], track.id);
+    }
 
     // If clicking the track that is already playing, toggle pause/play
     if (state.currentPlayingTrack && state.currentPlayingTrack.id === track.id) {
@@ -1166,6 +1206,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     iconPlay.style.display = 'block';
     iconPause.style.display = 'none';
     playerSeek.value = 0;
+    advancePlayback(1, false);
     if (state.currentPlayingBtn) {
       state.currentPlayingBtn.classList.remove('playing', 'loading');
       state.currentPlayingBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>';
@@ -1431,7 +1472,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         const isCurrentlyPlaying = state.currentPlayingTrack && state.currentPlayingTrack.id === track.id && !audio.paused;
 
         tr.innerHTML = `
-          <td class="col-num">${idx + 1}</td>
+          <td class="col-num"><input type="checkbox" class="select-downloaded" aria-label="Seleccionar ${escapeHtml(track.name)}" ${state.selectedDownloads.has(track.localPath) ? 'checked' : ''}></td>
           <td>
             <button class="btn-play-row btn-play-local-track ${isCurrentlyPlaying ? 'playing' : ''}" data-id="${track.id}" title="Reproducir Canción">
               ${isCurrentlyPlaying
@@ -1466,6 +1507,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           </td>
         `;
 
+        tr.querySelector('.select-downloaded').addEventListener('change', event => {
+          if (event.target.checked) state.selectedDownloads.add(track.localPath);
+          else state.selectedDownloads.delete(track.localPath);
+          updateDownloadedSelection();
+        });
         const playBtn = tr.querySelector('.btn-play-local-track');
         if (isCurrentlyPlaying) {
           state.currentPlayingBtn = playBtn;
@@ -1521,6 +1567,45 @@ document.addEventListener('DOMContentLoaded', async () => {
       console.warn('Error in renderDownloadedLibrary:', e);
     }
   }
+
+  function updateDownloadedSelection() {
+    const button = document.getElementById('btn-delete-selected-downloaded');
+    button.disabled = !state.selectedDownloads.size;
+    button.textContent = `Eliminar selección (${state.selectedDownloads.size})`;
+  }
+  document.getElementById('btn-select-downloaded').addEventListener('click', () => {
+    const visible = state.downloadedTracks.filter(track => `${track.name} ${track.artists}`.toLowerCase().includes((state.downloadFilter || '').toLowerCase()));
+    const all = visible.every(track => state.selectedDownloads.has(track.localPath));
+    visible.forEach(track => all ? state.selectedDownloads.delete(track.localPath) : state.selectedDownloads.add(track.localPath));
+    updateDownloadedSelection();
+    renderDownloadedLibrary(state.downloadFilter || '');
+  });
+  document.getElementById('btn-delete-selected-downloaded').addEventListener('click', async event => {
+    const button = event.currentTarget;
+    const selected = state.downloadedTracks.filter(track => state.selectedDownloads.has(track.localPath));
+    if (!selected.length || !await showDeleteConfirmModal({ name: `${selected.length} canciones seleccionadas`, artists: 'Se eliminarán los archivos del dispositivo.' })) return;
+    button.disabled = true;
+    const removed = new Set();
+    let failed = 0;
+    for (const track of selected) {
+      const result = await window.snapAPI.deleteDownloadedTrack(track.localPath).catch(() => ({ success: false }));
+      if (result.success) {
+        removed.add(track.id);
+        state.selectedDownloads.delete(track.localPath);
+      } else failed++;
+    }
+    playbackQueue.remove(removed);
+    if (removed.has(state.currentPlayingTrack?.id)) {
+      currentPlaySeq++;
+      audio.pause();
+      audio.removeAttribute('src');
+      state.currentPlayingTrack = null;
+      bottomPlayer.style.display = 'none';
+    }
+    showToast(`${removed.size} eliminadas${failed ? `; ${failed} no se pudieron eliminar` : ''}`, !!failed);
+    updateDownloadedSelection();
+    await renderDownloadedLibrary(state.downloadFilter || '');
+  });
 
   function showDeleteConfirmModal(track) {
     return new Promise((resolve) => {

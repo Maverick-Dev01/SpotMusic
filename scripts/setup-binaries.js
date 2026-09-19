@@ -37,6 +37,22 @@ if (!fs.existsSync(macFfmpeg)) {
   }
 }
 
+// Both Mac packages share these resources: include both CPU architectures.
+if (process.platform === 'darwin' && fs.existsSync(macFfmpeg)) {
+  const architectures = execSync(`lipo -archs "${macFfmpeg}"`, { encoding: 'utf8' });
+  if (!architectures.includes('arm64') || !architectures.includes('x86_64')) {
+    const release = 'https://github.com/eugeneware/ffmpeg-static/releases/download/b6.1.1';
+    for (const arch of ['arm64', 'x64']) {
+      const binary = path.join(binMacDir, `ffmpeg-${arch}`);
+      run(`curl -fL "${release}/ffmpeg-darwin-${arch}.gz" -o "${binary}.gz"`);
+      run(`gzip -df "${binary}.gz"`);
+    }
+    run(`lipo -create "${path.join(binMacDir, 'ffmpeg-arm64')}" "${path.join(binMacDir, 'ffmpeg-x64')}" -output "${macFfmpeg}"`);
+    fs.chmodSync(macFfmpeg, 0o755);
+    for (const arch of ['arm64', 'x64']) fs.unlinkSync(path.join(binMacDir, `ffmpeg-${arch}`));
+  }
+}
+
 // 3. Windows yt-dlp
 const winYtdlp = path.join(binWinDir, 'yt-dlp.exe');
 if (!fs.existsSync(winYtdlp)) {

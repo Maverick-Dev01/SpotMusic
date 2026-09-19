@@ -62,7 +62,8 @@ class StreamResolver {
     const titleLower = title.toLowerCase();
     const candLower = candidateTitle.toLowerCase();
     for (const word of unwanted) {
-      if (!titleLower.includes(word) && candLower.includes(word)) {
+      const pattern = new RegExp(`\\b${word}\\b`, 'i');
+      if (pattern.test(titleLower) !== pattern.test(candLower)) {
         return 0; // REJECT remixes/covers/mixes if not in requested title
       }
     }
