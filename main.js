@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, protocol, net, clipboard } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
@@ -281,6 +281,10 @@ ipcMain.handle('spotify-connect', async () => {
   return { success: true };
 });
 ipcMain.handle('spotify-disconnect', () => { spotifyAuth.disconnect(); return { success: true }; });
+
+ipcMain.handle('read-clipboard', () => {
+  try { return clipboard.readText(); } catch { return ''; }
+});
 
 ipcMain.handle('get-settings', async () => {
   return settingsService.getSettings();

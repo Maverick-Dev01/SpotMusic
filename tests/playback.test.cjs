@@ -51,3 +51,13 @@ test('search ranking puts the popular original above identically titled covers',
  assert.equal(results[results.length-1].artists,'KIDZ BOP Kids');
  assert.match(spotify.rankSearchResults('Blinding Lights Remix',results)[0].name,/Remix/);
 });
+test('a linked account never blocks an import: Spotify 404 falls back to the public reader',async()=>{
+ // Spotify answers 404 over the Web API for its own editorial playlists.
+ spotify.makeHttpRequest=async()=>{throw new Error('Spotify API error: 404 Resource not found')};
+ spotify.fetchFromEmbed=async(type,id)=>({id,type,name:'Today\u2019s Top Hits',tracks:[{id:'a'},{id:'b'}],total_tracks:2,partial:true});
+ const data=await spotify.getPlaylist('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M','','','user-token');
+ assert.equal(data.tracks.length,2);
+ // An explicit denial must stay visible instead of degrading silently.
+ spotify.makeHttpRequest=async()=>{throw new Error('Spotify rechazó el acceso (403).')};
+ await assert.rejects(spotify.getPlaylist('https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M','','','user-token'),/403/);
+});

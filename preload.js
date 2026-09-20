@@ -1,8 +1,9 @@
-const { contextBridge, ipcRenderer, clipboard } = require('electron');
+const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('snapAPI', {
   platform: process.platform,
-  readClipboard: () => clipboard.readText(),
+  // Electron no longer exposes the clipboard module here, so it is read in main.
+  readClipboard: () => ipcRenderer.invoke('read-clipboard'),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
   selectFolder: () => ipcRenderer.invoke('select-folder'),

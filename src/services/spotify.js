@@ -269,7 +269,19 @@ class SpotifyService {
       throw new Error('El enlace ingresado no es válido. Debe ser un enlace de Spotify (ej: https://open.spotify.com/playlist/...)');
     }
 
-    if (info.type === 'playlist' && userToken) return this.fetchPlaylistWithApi(info.id, userToken);
+    // A linked account loads every page, but Spotify answers 404 for its own
+    // editorial playlists (Today's Top Hits, Discover Weekly) over the Web API,
+    // so linking an account must never be what stops an import: fall through to
+    // the public reader on anything that is not an explicit access denial.
+    if (info.type === 'playlist' && userToken) {
+      try {
+        return await this.fetchPlaylistWithApi(info.id, userToken);
+      } catch (error) {
+        const message = error?.message || '';
+        if (/401|403/.test(message)) throw error;
+        console.warn('Spotify API import failed, falling back to the public reader:', message);
+      }
+    }
     // The public embed is only a partial view. Prefer paginated API access.
     if (info.type === 'playlist' && clientId?.trim() && clientSecret?.trim()) {
       try {
