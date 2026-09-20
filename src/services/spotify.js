@@ -42,6 +42,40 @@ class SpotifyService {
     return null;
   }
 
+  /**
+   * Catalogue search buries the original recording under covers and karaoke
+   * versions that share its exact title. Spotify's popularity settles it when it
+   * is available; otherwise fall back to what the text reveals.
+   */
+  rankSearchResults(query, tracks) {
+    const VERSION_MARKERS = /(remix|nightcore|slowed|reverb|sped up|speed up|8d|cover|karaoke|instrumental|acapella|a cappella|tribute|originally performed|made famous by|in the style of|live|extended mix|mashup|bootleg|lofi|lo-fi|bass boosted|version|1 hour|10 hours|loop)/i;
+    const COVER_FACTORY = /(kidz bop|rockabye baby|lullaby|lullabies|lullapop|karaoke|tribute band|the hit crew|ameritz|zzang|piano tribute|string quartet|8-bit|8 bit)/i;
+    const normalize = (text) => String(text || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+    const wanted = normalize(query);
+    const terms = new Set(wanted.split(' ').filter(Boolean));
+    const queryWantsVersion = VERSION_MARKERS.test(query || '');
+
+    const score = (track) => {
+      const title = normalize(track.name);
+      const artist = normalize(track.artists);
+      const tokens = new Set(`${title} ${artist}`.split(' ').filter(Boolean));
+      let value = (title === wanted || `${title} ${artist}` === wanted || `${artist} ${title}` === wanted ? 2 : 0)
+        + (terms.size ? [...terms].filter(term => tokens.has(term)).length / terms.size : 0);
+      if (!queryWantsVersion && VERSION_MARKERS.test(`${track.name} ${track.artists}`)) value -= 1.5;
+      if (COVER_FACTORY.test(`${track.name} ${track.artists}`)) value -= 2.5;
+      if (typeof track.popularity === 'number' && Number.isFinite(track.popularity)) {
+        value += Math.max(0, Math.min(100, track.popularity)) / 100 * 3;
+      }
+      return value;
+    };
+
+    // Stable: equal scores keep the provider's own relevance order.
+    return tracks
+      .map((track, index) => ({ track, index, value: score(track) }))
+      .sort((a, b) => b.value - a.value || a.index - b.index)
+      .map(entry => entry.track);
+  }
+
   formatDuration(ms) {
     if (!ms || isNaN(ms)) return '0:00';
     const totalSeconds = Math.floor(ms / 1000);
@@ -367,7 +401,9 @@ class SpotifyService {
             duration_str: this.formatDuration(t.duration_ms),
             cover_url: t.album?.images?.[0]?.url || null,
             preview_url: null, // Always prioritize full audio stream resolver
-            spotify_url: t.external_urls?.spotify || ''
+            spotify_url: t.external_urls?.spotify || '',
+            // Only real measure of which recording people actually listen to.
+            popularity: typeof t.popularity === 'number' ? t.popularity : undefined
           };
         });
 
@@ -431,8 +467,9 @@ class SpotifyService {
         spotify_url: ''
       }));
 
-      const tracks = [...(spotifyResults?.tracks || []), ...allTracks.slice(0, 35)].filter((track, index, all) =>
+      const merged = [...(spotifyResults?.tracks || []), ...allTracks.slice(0, 35)].filter((track, index, all) =>
         all.findIndex(other => `${other.name}|${other.artists}`.toLowerCase() === `${track.name}|${track.artists}`.toLowerCase()) === index);
+      const tracks = this.rankSearchResults(query, merged);
       const recommendations = allTracks.slice(35, 50);
 
       const albums = (albumData.results || []).map((a, idx) => ({

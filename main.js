@@ -226,7 +226,13 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
-    app.setAsDefaultProtocolClient('spotmusic-login');
+    // In dev (`npm start`) the launcher is electron.exe, so the app path must be
+    // registered with it or Windows opens a bare Electron on the Spotify callback.
+    if (process.defaultApp && process.argv.length >= 2) {
+      app.setAsDefaultProtocolClient('spotmusic-login', process.execPath, [path.resolve(process.argv[1])]);
+    } else {
+      app.setAsDefaultProtocolClient('spotmusic-login');
+    }
     try {
       await startAudioServer();
     } catch (serverErr) {
@@ -315,12 +321,10 @@ ipcMain.handle('test-spotify-credentials', async (event, { clientId, clientSecre
 ipcMain.handle('fetch-playlist', async (event, url) => {
   try {
     const settings = settingsService.getSettings();
-    const info = spotifyService.extractSpotifyInfo(url);
-    const userToken = await spotifyAuth.accessToken();
-    if (info?.type === 'playlist' && !userToken) {
-      await spotifyAuth.connect(settings.spotifyClientId);
-      return { success: false, requiresSpotifyLogin: true, error: 'Inicia sesión en la ventana de Spotify. Al regresar se continuará la importación.' };
-    }
+    // A linked account loads every page of a playlist, but it must never be a
+    // precondition: without it the public reader still returns the list, and
+    // demanding the login up front made every pasted link fail.
+    const userToken = await spotifyAuth.accessToken().catch(() => '');
     const playlist = await spotifyService.getPlaylist(
       url,
       settings.spotifyClientId,
@@ -639,7 +643,9 @@ ipcMain.handle('start-batch-download', async (event, { tracks, format, concurren
       {
         downloadDir: targetDir,
         format: targetFormat,
-        concurrency: targetConcurrency
+        concurrency: targetConcurrency,
+        embedCover: settings.embedCover !== false,
+        embedMetadata: settings.embedMetadata !== false
       },
       (progressData) => {
         if (progressData && progressData.status === 'completed' && progressData.track) {

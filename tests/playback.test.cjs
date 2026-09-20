@@ -41,3 +41,13 @@ test('Spotify PKCE validates state and exchanges code without a client secret',a
  await auth.callback('spotmusic-login://callback?state='+url.searchParams.get('state')+'&code=test-code');
  assert.equal(request.body.get('client_secret'),null);assert.equal(await auth.accessToken(),'test-token');
 });
+test('search ranking puts the popular original above identically titled covers',()=>{
+ const results=spotify.rankSearchResults('Blinding Lights',[
+  {name:'Blinding Lights',artists:'Teddy Swims',popularity:41},
+  {name:'Blinding Lights',artists:'KIDZ BOP Kids'},
+  {name:'Blinding Lights (Remix)',artists:'The Weeknd & ROSALÍA',popularity:70},
+  {name:'Blinding Lights',artists:'The Weeknd',popularity:93}]);
+ assert.equal(results[0].artists,'The Weeknd');
+ assert.equal(results[results.length-1].artists,'KIDZ BOP Kids');
+ assert.match(spotify.rankSearchResults('Blinding Lights Remix',results)[0].name,/Remix/);
+});

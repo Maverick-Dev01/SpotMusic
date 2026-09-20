@@ -147,6 +147,7 @@ class DownloaderService {
     this.maxConcurrency = options.concurrency || 3;
     const downloadDir = options.downloadDir;
     const formatKey = options.format || 'mp3-320';
+    const embed = { embedCover: options.embedCover !== false, embedMetadata: options.embedMetadata !== false };
 
     if (!fs.existsSync(downloadDir)) {
       fs.mkdirSync(downloadDir, { recursive: true });
@@ -157,7 +158,8 @@ class DownloaderService {
       this.queue.push({
         track,
         downloadDir,
-        formatKey
+        formatKey,
+        embed
       });
       this.notify(track.id, {
         status: 'queued',
@@ -271,7 +273,7 @@ class DownloaderService {
       this.rateHistory.push(Date.now());
 
       const launch = () => {
-        this.downloadTrack(item.track, item.downloadDir, item.formatKey)
+        this.downloadTrack(item.track, item.downloadDir, item.formatKey, item.embed)
           .finally(() => {
             this.runningCount--;
             this.completedCount = (this.completedCount || 0) + 1;
@@ -292,10 +294,12 @@ class DownloaderService {
     }
   }
 
-  downloadTrack(track, downloadDir, formatKey) {
+  downloadTrack(track, downloadDir, formatKey, embed = {}) {
     return new Promise((resolve) => {
       const trackId = track.id;
       const { ext, quality } = this.getFormatFlags(formatKey);
+      const embedCover = embed.embedCover !== false;
+      const embedMetadata = embed.embedMetadata !== false;
 
       const artistClean = this.cleanFilename(track.artists);
       const titleClean = this.cleanFilename(track.name);
@@ -312,6 +316,11 @@ class DownloaderService {
       const firstArtist = (track.artists || '').split(/[,&/]/)[0].trim();
       const searchQuery = `ytsearch1:${cleanName} ${firstArtist} official audio`;
 
+      // yt-dlp can only write cover art into these containers. Requesting it for any
+      // other format (wav) aborts the download at post-processing, after the audio
+      // file is already complete, and leaves the converted thumbnail behind.
+      const supportsThumbnail = ['mp3', 'flac', 'm4a', 'opus'].includes(ext);
+
       const args = [
         '--extractor-args', 'youtube:player_client=android,web',
         searchQuery,
@@ -320,11 +329,12 @@ class DownloaderService {
         '--audio-quality', quality,
         '--no-playlist',
         '--no-warnings',
-        '--embed-thumbnail',
-        '--add-metadata',
         '--newline',
         '--output', outputPattern
       ];
+
+      if (embedCover && supportsThumbnail) args.push('--embed-thumbnail');
+      if (embedMetadata) args.push('--add-metadata');
 
       if (this.ffmpegPath) {
         args.push('--ffmpeg-location', this.ffmpegPath);
@@ -335,12 +345,15 @@ class DownloaderService {
       let downloadTimeout = null;
 
       try {
-        child = spawn(ytExecutable, args, {
-          env: {
-            ...process.env,
-            PATH: `${path.dirname(this.ffmpegPath || '')}:${process.env.PATH}`
-          }
-        });
+        // Windows uses ';' and stores the variable as 'Path': joining with ':' here
+        // corrupted the first entry and dropped system32 from the child's PATH.
+        const childEnv = { ...process.env };
+        if (this.ffmpegPath) {
+          const pathKey = Object.keys(childEnv).find(key => key.toUpperCase() === 'PATH') || 'PATH';
+          childEnv[pathKey] = [path.dirname(this.ffmpegPath), childEnv[pathKey]].filter(Boolean).join(path.delimiter);
+        }
+
+        child = spawn(ytExecutable, args, { env: childEnv });
         this.activeProcesses.set(trackId, child);
 
         // Safety timeout: 4 minutes max per track

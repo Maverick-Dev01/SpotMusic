@@ -58,7 +58,15 @@ class StreamResolver {
     const titleScore = this.similarity(cleanT, candidateTitle);
 
     // Filter out remixes/covers/mixes unless requested
-    const unwanted = ['remix', 'nightcore', '8d audio', 'slowed', 'reverb', 'cover', 'live', 'extended mix', '1 hour', '10 hours', 'mix'];
+    const unwanted = [
+      'remix', 'nightcore', 'slowed', 'reverb', 'sped up', 'speed up', '8d audio', '8d',
+      'cover', 'karaoke', 'instrumental', 'acapella', 'a cappella', 'tribute',
+      'originally performed', 'made famous by', 'in the style of',
+      // "edit" is deliberately absent: "Radio Edit" is usually the standard single.
+      'live', 'extended mix', 'mix', 'mashup', 'bootleg',
+      'afro house', 'techno', 'house version', 'piano version', 'string quartet',
+      'lofi', 'lo-fi', 'bass boosted', 'reverse', '1 hour', '10 hours', 'loop'
+    ];
     const titleLower = title.toLowerCase();
     const candLower = candidateTitle.toLowerCase();
     for (const word of unwanted) {

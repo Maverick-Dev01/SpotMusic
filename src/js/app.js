@@ -1048,14 +1048,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     event.currentTarget.style.color = playbackQueue.repeat !== 'off' ? 'var(--accent)' : '';
   });
 
+  // Auto-advance and the prev/next buttons carry no DOM button, so the row in the
+  // list would stop showing the playing state. Resolve it from the visible view.
+  function findTrackButton(trackId) {
+    const buttons = document.querySelectorAll(`.btn-play-row[data-id="${CSS.escape(String(trackId))}"]`);
+    return Array.from(buttons).find(button => button.offsetParent !== null) || buttons[0] || null;
+  }
+
   async function playAudio(track, triggerBtn = null, fromQueue = false) {
     if (!track) return;
-    if (!fromQueue) {
-      const context = track.isLocal ? state.downloadedTracks
-        : state.playlist?.tracks?.some(item => item.id === track.id) ? state.playlist.tracks
-        : state.catalogResults?.tracks || [track];
-      playbackQueue.set(context.some(item => item.id === track.id) ? context : [track], track.id);
-    }
+    if (!triggerBtn) triggerBtn = findTrackButton(track.id);
 
     // If clicking the track that is already playing, toggle pause/play
     if (state.currentPlayingTrack && state.currentPlayingTrack.id === track.id) {
@@ -1071,6 +1073,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         if (triggerBtn) triggerBtn.classList.remove('playing');
       }
       return;
+    }
+
+    // Rebuild the queue only for a genuinely new track: doing this before the toggle
+    // above reset the shuffle bag and the history on every pause/resume.
+    if (!fromQueue) {
+      const context = track.isLocal ? state.downloadedTracks
+        : state.playlist?.tracks?.some(item => item.id === track.id) ? state.playlist.tracks
+        : state.catalogResults?.tracks || [track];
+      playbackQueue.set(context.some(item => item.id === track.id) ? context : [track], track.id);
     }
 
     const playSeq = ++currentPlaySeq;
